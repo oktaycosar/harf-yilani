@@ -8,6 +8,7 @@
 class TTSManagerImpl {
   private available: boolean = false;
   enabled: boolean = true;
+  private volume: number = 0.9;
   private voices: SpeechSynthesisVoice[] = [];
 
   constructor() {
@@ -32,6 +33,10 @@ class TTSManagerImpl {
     this.enabled = v;
   }
 
+  setVolume(v: number) {
+    this.volume = Math.max(0, Math.min(1, v));
+  }
+
   /** Verilen kelimeyi Türkçe seslendir. */
   speak(text: string, opts?: { rate?: number; pitch?: number }) {
     if (!this.enabled || !this.available) return;
@@ -43,7 +48,7 @@ class TTSManagerImpl {
       utterance.lang = "tr-TR";
       utterance.rate = opts?.rate ?? 0.9;
       utterance.pitch = opts?.pitch ?? 1.0;
-      utterance.volume = 0.9;
+      utterance.volume = this.volume;
       // Türkçe ses bul (varsa)
       const trVoice = this.voices.find((v) => v.lang === "tr-TR");
       if (trVoice) {

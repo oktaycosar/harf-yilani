@@ -372,7 +372,8 @@ function WrongLetterOverlay({ snapshot, onRetry }: Props) {
   );
 }
 
-function PauseOverlay({ onResume }: Props) {
+function PauseOverlay({ snapshot, onResume }: Props) {
+  const s = snapshot;
   return (
     <Shell tone="slate">
       <div className="text-center">
@@ -381,7 +382,28 @@ function PauseOverlay({ onResume }: Props) {
         </div>
         <h2 className="text-xl font-extrabold text-white">Duraklatıldı</h2>
         <p className="mt-1 text-xs text-slate-400">Devam etmek için P / ESC veya butona bas.</p>
-        <Button onClick={onResume} size="lg" className="mt-5 w-full bg-emerald-500 text-white hover:bg-emerald-600">
+
+        {/* Anlık istatistik özeti */}
+        <div className="mt-4 grid grid-cols-2 gap-2 text-left">
+          <div className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Skor</div>
+            <div className="mt-0.5 text-lg font-bold text-amber-300">{s.score}</div>
+          </div>
+          <div className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Bölüm</div>
+            <div className="mt-0.5 text-lg font-bold text-emerald-300">{s.level}</div>
+          </div>
+          <div className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Combo</div>
+            <div className="mt-0.5 text-lg font-bold text-amber-300">×{s.combo}</div>
+          </div>
+          <div className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-2.5">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Kelime</div>
+            <div className="mt-0.5 text-lg font-bold text-white truncate">{s.targetWord || "—"}</div>
+          </div>
+        </div>
+
+        <Button onClick={onResume} size="lg" className="mt-4 w-full bg-emerald-500 text-white hover:bg-emerald-600">
           <Play className="mr-2 h-4 w-4" /> Devam Et
         </Button>
       </div>

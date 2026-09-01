@@ -18,6 +18,7 @@ import { ConfettiBurst } from "@/components/game/ConfettiBurst";
 import { SettingsDialog } from "@/components/game/SettingsDialog";
 import { ComboFlash } from "@/components/game/ComboFlash";
 import { LevelTransition } from "@/components/game/LevelTransition";
+import { AchievementNotification } from "@/components/game/AchievementNotification";
 import { useSwipe } from "@/components/game/useSwipe";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -142,9 +143,15 @@ export default function Home() {
               stats={game.stats}
               soundEnabled={game.soundEnabled}
               leaderboard={game.leaderboard}
+              achievements={game.achievements}
+              categoryProgress={game.categoryProgress}
+              soundVolume={game.soundVolume}
+              ttsVolume={game.ttsVolume}
               onToggleSound={(v) => {
                 if (v !== game.soundEnabled) game.toggleSound();
               }}
+              onSoundVolume={game.setVolume}
+              onTtsVolume={game.setTtsVolumeLevel}
               onReset={game.resetAllStats}
             />
           </div>
@@ -231,6 +238,14 @@ export default function Home() {
           </span>
         </div>
       </main>
+
+      {/* ---------------------------------------------------------------- ACHIEVEMENT NOTIFICATION */}
+      <AchievementNotification
+        achievement={game.newlyUnlockedAchievement}
+        onDismiss={() => {
+          // Bildirimi kapat — state otomatik temizlenir
+        }}
+      />
 
       {/* ---------------------------------------------------------------- FOOTER */}
       <footer className="relative z-10 mt-auto border-t border-slate-800/60 bg-slate-950/80 py-3 backdrop-blur">

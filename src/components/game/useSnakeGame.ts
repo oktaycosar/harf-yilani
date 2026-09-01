@@ -29,10 +29,18 @@ import {
   resetStats,
   saveStats,
   setSoundEnabled as persistSound,
+  setSoundVolume,
+  setTtsVolume,
   loadLeaderboard,
   addToLeaderboard,
+  loadAchievements,
+  checkAchievements,
+  loadCategoryProgress,
+  incrementCategoryProgress,
   type GameStats,
   type LeaderboardEntry,
+  type Achievement,
+  type CategoryProgress,
 } from "@/lib/game/storage";
 
 export interface UseSnakeGameApi {
@@ -70,6 +78,18 @@ export interface UseSnakeGameApi {
   /** TTS sesli okuma açık mı */
   ttsEnabled: boolean;
   toggleTTS: () => void;
+  /** Achievement listesi */
+  achievements: Achievement[];
+  /** Yeni açılan achievement (bildirim için) */
+  newlyUnlockedAchievement: Achievement | null;
+  /** Kategori ilerlemesi */
+  categoryProgress: CategoryProgress;
+  /** Ses seviyesi (0-1) */
+  soundVolume: number;
+  setVolume: (v: number) => void;
+  /** TTS ses seviyesi (0-1) */
+  ttsVolume: number;
+  setTtsVolumeLevel: (v: number) => void;
 }
 
 export function useSnakeGame(): UseSnakeGameApi {
@@ -83,6 +103,11 @@ export function useSnakeGame(): UseSnakeGameApi {
   const [showTranslation, setShowTranslation] = useState<boolean>(false);
   const [easyMode, setEasyMode] = useState<boolean>(false);
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(true);
+  const [achievements, setAchievements] = useState<Achievement[]>(() => loadAchievements());
+  const [newlyUnlockedAchievement, setNewlyUnlockedAchievement] = useState<Achievement | null>(null);
+  const [categoryProgress, setCategoryProgress] = useState<CategoryProgress>(() => loadCategoryProgress());
+  const [soundVolume, setSoundVolumeState] = useState<number>(() => loadStats().soundVolume);
+  const [ttsVolume, setTtsVolumeState] = useState<number>(() => loadStats().ttsVolume);
   const isDailyModeRef = useRef<boolean>(false);
 
   const recentWordsRef = useRef<string[]>([]);
@@ -93,11 +118,13 @@ export function useSnakeGame(): UseSnakeGameApi {
   const lastEventSigRef = useRef<string>("");
   const lastWarningSecRef = useRef<number>(-1);
   const wordsCompletedThisRunRef = useRef<number>(0);
+  const boosterCollectedThisRunRef = useRef<boolean>(false);
   const statsRef = useRef<GameStats>(stats);
   const soundEnabledRef = useRef<boolean>(soundEnabled);
   const categoryRef = useRef<Category>(category);
   const easyModeRef = useRef<boolean>(easyMode);
   const ttsEnabledRef = useRef<boolean>(ttsEnabled);
+  const achievementsRef = useRef<Achievement[]>(achievements);
   useEffect(() => {
     statsRef.current = stats;
   }, [stats]);
@@ -114,11 +141,24 @@ export function useSnakeGame(): UseSnakeGameApi {
     ttsEnabledRef.current = ttsEnabled;
     TTSManager.setEnabled(ttsEnabled);
   }, [ttsEnabled]);
+  useEffect(() => {
+    achievementsRef.current = achievements;
+  }, [achievements]);
 
   // İlk yüklemede SoundManager'ı senkronize et
   useEffect(() => {
     SoundManager.setEnabled(soundEnabled);
   }, [soundEnabled]);
+
+  // Ses seviyesini uygula
+  useEffect(() => {
+    SoundManager.setVolume(soundVolume);
+  }, [soundVolume]);
+
+  // TTS ses seviyesini uygula
+  useEffect(() => {
+    TTSManager.setVolume(ttsVolume);
+  }, [ttsVolume]);
 
   const publish = useCallback(() => {
     setSnapshot(engine.getSnapshot());
@@ -212,6 +252,7 @@ export function useSnakeGame(): UseSnakeGameApi {
             break;
           case "boost_collected":
             playSfx("boost");
+            boosterCollectedThisRunRef.current = true;
             break;
           case "ice_entered":
             playSfx("ice");
@@ -230,6 +271,11 @@ export function useSnakeGame(): UseSnakeGameApi {
             if (isDailyModeRef.current) {
               markDailyCompleted();
             }
+            // Kategori ilerlemesi güncelle
+            {
+              const updated = incrementCategoryProgress(categoryRef.current);
+              setCategoryProgress(updated);
+            }
             {
               const cur = statsRef.current;
               const next: GameStats = {
@@ -246,6 +292,25 @@ export function useSnakeGame(): UseSnakeGameApi {
                 statsRef.current = next;
                 saveStats(next);
                 setStats(next);
+              }
+              // Achievement kontrolü
+              const { achievements: updatedAch, newlyUnlocked } = checkAchievements(
+                achievementsRef.current,
+                next,
+                {
+                  combo: s.combo,
+                  dailyCompleted: isDailyModeRef.current,
+                  boosterCollected: boosterCollectedThisRunRef.current,
+                }
+              );
+              if (newlyUnlocked.length > 0) {
+                setAchievements(updatedAch);
+                // İlk yeni açılanı bildirim olarak göster
+                setNewlyUnlockedAchievement(newlyUnlocked[0]);
+                // Achievement sesi çal (sfx'ten sonra)
+                setTimeout(() => SoundManager.play("level_up"), 300);
+                // 4 saniye sonra bildirimi temizle
+                setTimeout(() => setNewlyUnlockedAchievement(null), 4000);
               }
             }
             break;
@@ -318,6 +383,7 @@ export function useSnakeGame(): UseSnakeGameApi {
     SoundManager.ensureContext();
     playSfx("start");
     wordsCompletedThisRunRef.current = 0;
+    boosterCollectedThisRunRef.current = false;
     isDailyModeRef.current = false;
     engine.resetRun();
     // Kolay mod: ekstra can
@@ -404,6 +470,10 @@ export function useSnakeGame(): UseSnakeGameApi {
     setSoundEnabled(cleared.soundEnabled);
     SoundManager.setEnabled(cleared.soundEnabled);
     setLeaderboard([]);
+    setAchievements(loadAchievements());
+    setCategoryProgress(loadCategoryProgress());
+    setSoundVolumeState(cleared.soundVolume);
+    setTtsVolumeState(cleared.ttsVolume);
   }, []);
 
   const toggleTranslation = useCallback(() => {
@@ -421,6 +491,22 @@ export function useSnakeGame(): UseSnakeGameApi {
       if (!next) TTSManager.stop();
       return next;
     });
+  }, []);
+
+  const setVolume = useCallback((v: number) => {
+    setSoundVolumeState(v);
+    SoundManager.setVolume(v);
+    const updated = setSoundVolume(v, statsRef.current);
+    statsRef.current = updated;
+    setStats(updated);
+  }, []);
+
+  const setTtsVolumeLevel = useCallback((v: number) => {
+    setTtsVolumeState(v);
+    TTSManager.setVolume(v);
+    const updated = setTtsVolume(v, statsRef.current);
+    statsRef.current = updated;
+    setStats(updated);
   }, []);
 
   // Ref tabanlı aksiyonlar (klavye handler'ı stale closure yaşamaz)
@@ -517,5 +603,12 @@ export function useSnakeGame(): UseSnakeGameApi {
     startDaily,
     ttsEnabled,
     toggleTTS,
+    achievements,
+    newlyUnlockedAchievement,
+    categoryProgress,
+    soundVolume,
+    setVolume,
+    ttsVolume,
+    setTtsVolumeLevel,
   };
 }

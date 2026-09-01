@@ -330,3 +330,62 @@ Sonraki tur için öneriler:
 6. Yılan skin seçimi (farklı renk temaları).
 7. Achievement/başarım sistemi (ilk kelime, 10 combo, 1000 puan vb.).
 8. Pause menüsünde istatistik özeti.
+
+---
+Task ID: 12 (Cron turu 6 — Achievement sistemi + Kategori ilerleme + Pause menü + Volume slider)
+Agent: webDevReview cron (Z.ai Code)
+Task: Achievement/başarım sistemi, kategori ilerleme takibi, pause menüsü istatistik özeti, volume slider, achievement bildirim popup
+
+Work Log:
+- **Achievement sistemi** (`storage.ts` + `useSnakeGame.tsx`): 14 farklı başarım tanımı (İlk Kelime, Combo Ustası ×5, Combo Efsanesi ×10, Yüzü Geç, Beş Yüz Kulübü, Bin Puan, Acemi/Çırak/Usta bölüm seviyeleri, Kelime Avcısı/Hazinesi, Günlük Görev, Hız Toplayıcı, Kusursuz Bölüm). `checkAchievements()` fonksiyonu stats + anlık olaylara (combo, booster, daily) göre kontrol eder. localStorage'a timestamp ile kaydeder. Kelime tamamlandığında otomatik kontrol + bildirim.
+- **Achievement bildirim popup** (`AchievementNotification.tsx`): Yeni başarım açıldığında sağ üst köşede slide-in animasyon (spring). Amber gradient ikon + başlık + açıklama. 4 saniye sonra otomatik kaybolur. level_up sesi çalar (sfx'ten 300ms sonra). VLM doğruladı: achievement notification popup görünür ✓.
+- **Kategori ilerleme takibi** (`storage.ts` + `useSnakeGame.tsx`): Her kategori için tamamlanan kelime sayısı. Kelime tamamlandığında `incrementCategoryProgress()` ile güncellenir. Settings dialog'da 5 kategori için ilerleme çubuğu (0/10 hedef). VLM doğruladı: "5 categories with progress bars" ✓.
+- **Pause menüsü istatistik özeti** (`Overlays.tsx` — PauseOverlay): Duraklatıldığında 4 kart gösterir: Skor, Bölüm, Combo, Kelime. 2x2 grid layout. VLM ile doğrulandı.
+- **Volume slider** (`SettingsDialog.tsx` + `storage.ts` + `sound.ts` + `tts.ts`):
+  - Ses efektleri için ayrı slider (0-100%, `SoundManager.setVolume()`).
+  - TTS için ayrı slider (0-100%, `TTSManager.setVolume()` — yeni `setVolume` metodu eklendi).
+  - Slider'lar Settings > İstatistik sekmesinde, ses açıkken görünür.
+  - Değerler localStorage'a kaydedilir (soundVolume, ttsVolume).
+  - VLM doğruladı: "sliders for both Ses Efekt Seviyesi and Sesli Okuma Seviyesi" ✓.
+- **Settings dialog 4 sekme** (`SettingsDialog.tsx`): Tabs artık 4 sekme: İstatistik, Başarım (0/14 sayaç), Liderlik, Kategori. Her sekme ScrollArea ile.
+  - Başarım sekmesi: 14 kart grid, kilitli (🔒 grayscale) / açık (amber + ✅ check).
+  - Kategori sekmesi: 5 kategori ilerleme çubuğu.
+- **Styling polish**:
+  - Achievement kartları: amber glow + emoji ikon + açıklama + ✅.
+  - Kategori ilerleme: gradient bar (emerald) + hedef (X/10) + ✅ tamamlandı.
+  - Volume slider: yüzde gösterimi + Label.
+  - Pause menü: 2x2 istatistik kartı grid (skor amber, bölüm emerald, combo amber, kelime white).
+  - Achievement bildirim: slide-in spring + amber border + gradient ikon kutusu.
+
+QA Doğrulama (agent-browser + VLM):
+- Settings dialog 4 sekme: İstatistik, Başarım (0/14), Liderlik, Kategori ✓.
+- Achievement sekmesi: 14 başarım kartı, kilitli (🔒) + açık (✅) ✓ (VLM).
+- Kategori sekmesi: 5 kategori + ilerleme çubuğu (0/10) ✓ (VLM).
+- Volume slider: ses efekti + TTS, yüzde gösterimi ✓ (VLM).
+- Achievement bildirim: kelime tamamlandığında popup görünür ✓ (VLM).
+- localStorage: 5 başarım açıldı (first_word, score_100, level_5, level_10, no_death_run) + kategori ilerlemesi (doga:1) ✓.
+- Lint: ESLint temiz (0 error, 0 warning).
+- Dev server: 3000 portunda çalışıyor.
+
+Stage Summary:
+- Oyun artık 14 başarım, kategori ilerleme takibi, volume kontrolü ve zengin pause menüsü içeren tam özellikli bir deneyim.
+- Achievement sistemi otomatik kontrol + bildirim + ses + localStorage kalıcılık.
+- Kategori ilerlemesi her kategori için % tamamlanma gösterir (hedef 10 kelime).
+- Pause menüsü anlık istatistik özeti (skor, bölüm, combo, kelime) gösterir.
+- Ses efekti ve TTS için ayrı volume slider'ları.
+
+Unresolved issues / risks:
+- Godot projesi güncellenmedi (yalnızca web sürümü).
+- Achievement "no_death_run" basitleştirilmiş (5 kelime = açılır), gerçek "üst üste hata yok" mantığı eklenebilir.
+- Kategori hedefi sabit 10 kelime — dinamik yapılabilir.
+- Volume slider'lar ses açıkken görünür — ses kapalıyken gizli.
+
+Sonraki tur için öneriler:
+1. Godot projesini güncelle (achievement, kategori ilerleme, volume).
+2. Daha fazla TR→EN çevirisi ekle.
+3. Yılan skin seçimi (farklı renk temaları).
+4. Haftalık istatistik özeti (Settings'de grafik).
+5. Achievement detay görünümü (tıklanınca açılma tarihi + büyük ikon).
+6. Kategori hedefini dinamik yap (kelime havuzuna göre).
+7. no_death_run mantığını gerçek "üst üste hata yok" yap.
+8. Pause menüsüne "Menüye Dön" butonu ekle.
