@@ -2,9 +2,11 @@
 
 // ============================================================================
 // HUD — Oyun üst bilgi çubuğu (Bölüm, Hedef kelime, Skor, Can, Combo)
+// + kelime ilerleme çubuğu + en iyi skor rozeti
 // ============================================================================
 
-import { Heart, Sparkles, Zap, Trophy } from "lucide-react";
+import { Heart, Sparkles, Zap, Trophy, Gauge } from "lucide-react";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { GameSnapshot } from "@/lib/game/types";
 import { START_LIVES } from "@/lib/game/constants";
@@ -12,47 +14,80 @@ import { START_LIVES } from "@/lib/game/constants";
 interface Props {
   snapshot: GameSnapshot;
   nextTargetChar: string | null;
+  bestScore: number;
 }
 
-export function HUD({ snapshot, nextTargetChar }: Props) {
+export function HUD({ snapshot, nextTargetChar, bestScore }: Props) {
   const { level, targetWord, currentLetterIndex, score, lives, combo, tierName, stepMs } = snapshot;
+  const progress = targetWord.length > 0 ? (currentLetterIndex / targetWord.length) * 100 : 0;
 
   return (
     <div className="w-full">
       {/* Üst satır: Bölüm + Zorluk + Hız bilgisi */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-1">
         <div className="flex items-center gap-2">
-          <span className="rounded-lg bg-emerald-500/15 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-emerald-300">
+          <motion.span
+            key={level}
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 18 }}
+            className="rounded-lg bg-emerald-500/15 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-emerald-300 ring-1 ring-emerald-500/20"
+          >
             Bölüm {level}
-          </span>
+          </motion.span>
           <span className="rounded-lg bg-slate-700/40 px-2.5 py-1 text-xs font-semibold text-slate-300">
             {tierName}
           </span>
           <span className="hidden items-center gap-1 rounded-lg bg-slate-700/40 px-2.5 py-1 text-xs font-medium text-slate-400 sm:inline-flex">
-            <Zap className="h-3 w-3" />
+            <Gauge className="h-3 w-3" />
             {(1000 / stepMs).toFixed(1)} adım/sn
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <ScorePill score={score} />
+          <ScorePill score={score} bestScore={bestScore} />
           <LivesPill lives={lives} />
         </div>
       </div>
 
       {/* Hedef kelime gösterimi */}
-      <div className="mt-3 rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-3">
+      <div className="mt-3 overflow-hidden rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-3 shadow-lg">
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
             Hedef Kelime
           </span>
-          {combo > 1 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-bold text-amber-300">
-              <Sparkles className="h-3 w-3" />
-              COMBO ×{combo}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {combo > 1 && (
+              <motion.span
+                key={combo}
+                initial={{ scale: 0.7, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-bold text-amber-300 ring-1 ring-amber-500/30"
+              >
+                <Sparkles className="h-3 w-3" />
+                COMBO ×{combo}
+              </motion.span>
+            )}
+          </div>
         </div>
         <WordDisplay word={targetWord} currentIndex={currentLetterIndex} nextTargetChar={nextTargetChar} />
+
+        {/* Kelime ilerleme çubuğu */}
+        {targetWord.length > 0 && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-[10px] text-slate-500">
+              <span>{currentLetterIndex} / {targetWord.length} harf</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400"
+                initial={false}
+                animate={{ width: `${progress}%` }}
+                transition={{ type: "spring", stiffness: 200, damping: 24 }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -80,19 +115,22 @@ function WordDisplay({
         const eaten = i < currentIndex;
         const isNext = i === currentIndex;
         return (
-          <span
+          <motion.span
             key={i}
+            initial={false}
+            animate={eaten ? { scale: [1, 1.15, 1] } : { scale: 1 }}
+            transition={{ duration: 0.3 }}
             className={cn(
               "flex h-10 w-9 items-center justify-center rounded-md border text-2xl font-extrabold transition-all sm:h-11 sm:w-10",
               eaten
-                ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-200"
+                ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-200 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
                 : isNext
                   ? "animate-pulse border-amber-400 bg-amber-400/20 text-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.45)]"
                   : "border-slate-700/60 bg-slate-800/60 text-slate-500"
             )}
           >
             {eaten ? ch : isNext ? ch : "_"}
-          </span>
+          </motion.span>
         );
       })}
       {nextTargetChar && (
@@ -104,11 +142,20 @@ function WordDisplay({
   );
 }
 
-function ScorePill({ score }: { score: number }) {
+function ScorePill({ score, bestScore }: { score: number; bestScore: number }) {
+  const isBest = bestScore > 0 && score >= bestScore && score > 0;
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-3 py-1.5 text-sm font-bold text-amber-300">
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-bold transition-colors",
+        isBest
+          ? "bg-amber-500/25 text-amber-200 ring-1 ring-amber-400/50"
+          : "bg-amber-500/15 text-amber-300"
+      )}
+    >
       <Trophy className="h-4 w-4" />
       {score}
+      {isBest && <span className="text-[9px] uppercase">rekor!</span>}
     </span>
   );
 }
@@ -118,13 +165,18 @@ function LivesPill({ lives }: { lives: number }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-lg bg-rose-500/10 px-2.5 py-1.5">
       {Array.from({ length: total }).map((_, i) => (
-        <Heart
+        <motion.div
           key={i}
-          className={cn(
-            "h-4 w-4 transition-all",
-            i < lives ? "fill-rose-500 text-rose-500" : "fill-slate-700 text-slate-700"
-          )}
-        />
+          animate={i < lives ? { scale: [1, 1.1, 1] } : { scale: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <Heart
+            className={cn(
+              "h-4 w-4 transition-all",
+              i < lives ? "fill-rose-500 text-rose-500 drop-shadow-[0_0_4px_rgba(244,63,94,0.5)]" : "fill-slate-700 text-slate-700"
+            )}
+          />
+        </motion.div>
       ))}
     </span>
   );

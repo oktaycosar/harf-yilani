@@ -6,14 +6,17 @@
 // ============================================================================
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Gamepad2, RotateCcw, Play, ChevronRight, HeartCrack, CheckCircle2, AlertTriangle, Pause } from "lucide-react";
+import { Gamepad2, RotateCcw, Play, ChevronRight, HeartCrack, CheckCircle2, AlertTriangle, Pause, Trophy } from "lucide-react";
 import type { GameSnapshot } from "@/lib/game/types";
+import type { GameStats } from "@/lib/game/storage";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface Props {
   snapshot: GameSnapshot;
   nextTargetChar: string | null;
+  stats?: GameStats;
+  isNewBest?: boolean;
   onStart: () => void;
   onRetry: () => void;
   onContinue: () => void;
@@ -67,13 +70,18 @@ function Shell({ children, tone = "slate" }: { children: React.ReactNode; tone?:
   );
 }
 
-function MenuOverlay({ onStart }: Props) {
+function MenuOverlay({ onStart, stats }: Props) {
   return (
     <Shell>
       <div className="text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-700 shadow-lg">
+        <motion.div
+          initial={{ scale: 0, rotate: -20 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 200, damping: 14 }}
+          className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-700 shadow-lg shadow-emerald-500/40"
+        >
           <Gamepad2 className="h-8 w-8 text-white" />
-        </div>
+        </motion.div>
         <h1 className="text-3xl font-extrabold tracking-tight text-white">
           Harf <span className="text-emerald-400">Yılanı</span>
         </h1>
@@ -81,6 +89,14 @@ function MenuOverlay({ onStart }: Props) {
           Yılanı harflere ulaştır, hedef kelimeyi <span className="font-semibold text-amber-300">doğru sırayla</span> tamamla.
           Türkçe alfabe desteklidir.
         </p>
+
+        {/* En iyi skor rozeti */}
+        {stats && stats.bestScore > 0 && (
+          <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300">
+            <Trophy className="h-3.5 w-3.5" />
+            En İyi Skor: {stats.bestScore} • Bölüm {stats.bestLevel}
+          </div>
+        )}
 
         <div className="mt-5 rounded-lg border border-slate-700/50 bg-slate-800/40 p-4 text-left text-xs text-slate-300">
           <p className="mb-2 font-semibold text-slate-200">Nasıl Oynanır?</p>
@@ -90,10 +106,11 @@ function MenuOverlay({ onStart }: Props) {
             <li>• Sıradan farklı bir harfe çarparsan <b className="text-rose-300">can kaybedersin</b>.</li>
             <li>• Aynı harften birden fazla varsa <b className="text-amber-300">sırayı</b> takip et!</li>
             <li>• Duvara veya kendine çarpma.</li>
+            <li>• Arka arkaya doğru harflerle <b className="text-amber-300">combo</b> kazan!</li>
           </ul>
         </div>
 
-        <Button onClick={onStart} size="lg" className="mt-5 w-full bg-emerald-500 text-white hover:bg-emerald-600">
+        <Button onClick={onStart} size="lg" className="mt-5 w-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 transition-transform hover:bg-emerald-600 hover:scale-[1.02] active:scale-[0.98]">
           <Play className="mr-2 h-5 w-5" /> Oyna
         </Button>
         <p className="mt-2 text-[11px] text-slate-500">Enter / Space ile de başlat</p>
@@ -102,24 +119,40 @@ function MenuOverlay({ onStart }: Props) {
   );
 }
 
-function GameOverOverlay({ snapshot, onBackToMenu }: Props) {
+function GameOverOverlay({ snapshot, onBackToMenu, stats, isNewBest }: Props) {
   return (
     <Shell tone="rose">
       <div className="text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/20">
+        <motion.div
+          initial={{ scale: 0, rotate: 30 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 200, damping: 12 }}
+          className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/20"
+        >
           <HeartCrack className="h-9 w-9 text-rose-400" />
-        </div>
+        </motion.div>
         <h2 className="text-2xl font-extrabold text-white">Oyun Bitti</h2>
         <p className="mt-1 text-sm text-slate-400">Canların tükendi. Bölüm {snapshot.level} başarısız.</p>
 
+        {isNewBest && (
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-xs font-bold text-amber-300 ring-1 ring-amber-400/50"
+          >
+            <Trophy className="h-3.5 w-3.5" /> YENİ REKOR!
+          </motion.div>
+        )}
+
         <div className="mt-5 grid grid-cols-2 gap-3 text-left">
-          <Stat label="Skor" value={snapshot.score} />
+          <Stat label="Skor" value={snapshot.score} highlight={isNewBest} />
           <Stat label="Bölüm" value={snapshot.level} />
           <Stat label="En Yüksek Combo" value={`×${snapshot.maxCombo}`} />
-          <Stat label="Son Kelime" value={snapshot.targetWord || "—"} />
+          <Stat label="En İyi Skor" value={stats?.bestScore ?? snapshot.score} />
         </div>
 
-        <Button onClick={onBackToMenu} size="lg" className="mt-5 w-full bg-rose-500 text-white hover:bg-rose-600">
+        <Button onClick={onBackToMenu} size="lg" className="mt-5 w-full bg-rose-500 text-white transition-transform hover:bg-rose-600 hover:scale-[1.02] active:scale-[0.98]">
           <RotateCcw className="mr-2 h-4 w-4" /> Menüye Dön
         </Button>
       </div>
@@ -198,11 +231,16 @@ function PauseOverlay({ onResume }: Props) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
+function Stat({ label, value, highlight }: { label: string; value: string | number; highlight?: boolean }) {
   return (
-    <div className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-3">
+    <div className={cn(
+      "rounded-lg border p-3 transition-colors",
+      highlight
+        ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_12px_rgba(251,191,36,0.3)]"
+        : "border-slate-700/50 bg-slate-800/40"
+    )}>
       <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="mt-0.5 text-lg font-bold text-white">{value}</div>
+      <div className={cn("mt-0.5 text-lg font-bold", highlight ? "text-amber-300" : "text-white")}>{value}</div>
     </div>
   );
 }

@@ -3,11 +3,12 @@
 // ============================================================================
 // useSnakeGame — React tarafında GameManager görevi görür.
 // SnakeEngine'i sarmalar, oyun döngüsünü (requestAnimationFrame + accumulator)
-// çalıştırır, klavye/dokunma girdisini yönetir, bölüm akışını idare eder.
+// çalıştırır, klavye/dokunma girdisini yönetir, bölüm akışını idare eder,
+// ses efektlerini çalar ve istatistikleri localStorage'a kaydeder.
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SnakeEngine, type EngineEvent } from "@/lib/game/snakeEngine";
+import { SnakeEngine } from "@/lib/game/snakeEngine";
 import { getDifficultyForLevel, pickWordForLevel } from "@/lib/game/difficulty";
 import {
   LEVEL_COMPLETE_DELAY,
@@ -15,6 +16,15 @@ import {
   WRONG_LETTER_DELAY,
 } from "@/lib/game/constants";
 import type { GameSnapshot } from "@/lib/game/types";
+import { SoundManager, type SfxName } from "@/lib/game/sound";
+import {
+  loadStats,
+  recordGameEnd,
+  resetStats,
+  saveStats,
+  setSoundEnabled as persistSound,
+  type GameStats,
+} from "@/lib/game/storage";
 
 export interface UseSnakeGameApi {
   snapshot: GameSnapshot;
@@ -27,64 +37,139 @@ export interface UseSnakeGameApi {
   setDirection: (dir: GameSnapshot["direction"]) => void;
   /** Sıradaki hedef harf (kelime tamamlandıysa null) */
   nextTargetChar: string | null;
+  /** Kalıcı istatistikler */
+  stats: GameStats;
+  /** Ses açık mı */
+  soundEnabled: boolean;
+  toggleSound: () => void;
+  resetAllStats: () => void;
+  /** Kelime tamamlama konfeti tetikleyici (her tamamlamada değişir) */
+  confettiTrigger: number;
 }
 
 export function useSnakeGame(): UseSnakeGameApi {
-  // Engine'i useState lazy-init ile bir kez oluştur (mutasyon için kullanırız,
-  // setState çağırmıyoruz). Ref yerine state kullanmak render sırasında
-  // ref.current erişimi lint hatasını önler.
   const [engine] = useState(() => new SnakeEngine());
-
   const [snapshot, setSnapshot] = useState<GameSnapshot>(() => engine.getSnapshot());
+  const [stats, setStats] = useState<GameStats>(() => loadStats());
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => loadStats().soundEnabled);
+  const [confettiTrigger, setConfettiTrigger] = useState<number>(0);
+
   const recentWordsRef = useRef<string[]>([]);
   const rafRef = useRef<number | null>(null);
   const lastStepRef = useRef<number>(0);
   const accRef = useRef<number>(0);
+  const lastSigRef = useRef<string>("");
+  const lastEventSigRef = useRef<string>("");
+  const wordsCompletedThisRunRef = useRef<number>(0);
+  const statsRef = useRef<GameStats>(stats);
+  const soundEnabledRef = useRef<boolean>(soundEnabled);
+  useEffect(() => {
+    statsRef.current = stats;
+  }, [stats]);
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  // İlk yüklemede SoundManager'ı senkronize et
+  useEffect(() => {
+    SoundManager.setEnabled(soundEnabled);
+  }, [soundEnabled]);
 
   const publish = useCallback(() => {
     setSnapshot(engine.getSnapshot());
   }, [engine]);
 
-  // --- Olay işleme ---
-  // Oyun döngüsü her karede publish() çağırır, bu yüzden ek bir onEvent
-  // mekanizmasına gerek yok. Motor içindeki lastEvent alanı snapshot'a yansır.
+  const playSfx = useCallback((name: SfxName) => {
+    if (!soundEnabledRef.current) return;
+    SoundManager.play(name);
+  }, []);
 
   // --- Bölüm yükleme yardımcısı ---
   const loadLevel = useCallback(
-    (level: number) => {
+    (level: number, isAdvancement: boolean = false) => {
       const diff = getDifficultyForLevel(level);
       const { word } = pickWordForLevel(level, recentWordsRef.current);
       recentWordsRef.current = [...recentWordsRef.current.slice(-6), word];
       engine.loadLevel(level, word, diff.tier.name, diff.stepMs, diff.tier.tricky);
       lastStepRef.current = performance.now();
       accRef.current = 0;
+      if (isAdvancement && level > 1) playSfx("level_up");
       publish();
     },
-    [engine, publish]
+    [engine, publish, playSfx]
   );
 
   // --- Oyun döngüsü ---
-  // Durum değiştiğinde publish eder (imza karşılaştırması ile gereksiz
-  // render önlenir). Bu, manuel tick'lerde ve nadir geçişlerde React'in
-  // güncel kalmasını sağlar.
-  const lastSigRef = useRef<string>("");
   useEffect(() => {
     const loop = (now: number) => {
       if (engine.status === "playing") {
         const dt = now - lastStepRef.current;
         lastStepRef.current = now;
         accRef.current += dt;
-        // Tick sınırına ulaşınca adım at
         while (accRef.current >= engine.stepMs) {
           accRef.current -= engine.stepMs;
           engine.tick();
           if (engine.status !== "playing") break;
         }
       }
-      // Her karede imzayı kontrol et, değiştiyse publish et
       const s = engine.getSnapshot();
       const ev = s.lastEvent;
-      const sig = `${s.status}|${s.score}|${s.lives}|${s.combo}|${s.level}|${s.currentLetterIndex}|${s.snake.length}|${s.snake[0]?.x ?? -1}|${s.snake[0]?.y ?? -1}|${ev.kind}|${"index" in ev ? ev.index : ""}|${"char" in ev ? ev.char : ""}`;
+      const evSig = `${ev.kind}|${"index" in ev ? ev.index : ""}|${"char" in ev ? ev.char : ""}|${"combo" in ev ? ev.combo : ""}`;
+      const sig = `${s.status}|${s.score}|${s.lives}|${s.combo}|${s.level}|${s.currentLetterIndex}|${s.snake.length}|${s.snake[0]?.x ?? -1}|${s.snake[0]?.y ?? -1}|${evSig}`;
+
+      // Yeni olay tespit edildi → ses çal
+      if (evSig !== lastEventSigRef.current && ev.kind !== "none") {
+        lastEventSigRef.current = evSig;
+        switch (ev.kind) {
+          case "ate_correct":
+            playSfx("correct");
+            break;
+          case "ate_wrong":
+            playSfx("wrong");
+            break;
+          case "word_complete":
+            playSfx("word_complete");
+            wordsCompletedThisRunRef.current += 1;
+            setConfettiTrigger((c) => c + 1);
+            // İlerlemeyi anlık kaydet (oyuncu oyundan çıksa bile rekoru korunur).
+            // Not: s.score bu noktada +50 kelime bonusunu zaten içerir (tick içinde eklendi).
+            {
+              const cur = statsRef.current;
+              const next: GameStats = {
+                ...cur,
+                bestScore: Math.max(cur.bestScore, s.score),
+                bestLevel: Math.max(cur.bestLevel, s.level),
+                totalWordsCompleted: cur.totalWordsCompleted + 1,
+              };
+              if (
+                next.bestScore !== cur.bestScore ||
+                next.bestLevel !== cur.bestLevel ||
+                next.totalWordsCompleted !== cur.totalWordsCompleted
+              ) {
+                statsRef.current = next;
+                saveStats(next);
+                setStats(next);
+              }
+            }
+            break;
+          case "self_collision":
+          case "wall_collision":
+            playSfx("wrong");
+            break;
+        }
+      }
+
+      // Game over'a ilk geçişte istatistik kaydet + ses
+      if (s.status === "game_over" && lastSigRef.current.split("|")[0] !== "game_over") {
+        playSfx("game_over");
+        const updated = recordGameEnd(statsRef.current, {
+          score: s.score,
+          level: s.level,
+          wordsCompleted: wordsCompletedThisRunRef.current,
+        });
+        setStats(updated);
+      }
+
       if (sig !== lastSigRef.current) {
         lastSigRef.current = sig;
         setSnapshot(s);
@@ -95,19 +180,18 @@ export function useSnakeGame(): UseSnakeGameApi {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [engine]);
+  }, [engine, playSfx]);
 
   // --- Durum geçişleri için zamanlayıcılar ---
   useEffect(() => {
     if (snapshot.status === "level_complete") {
       const t = setTimeout(() => {
         engine.incrementLevel();
-        loadLevel(engine.level);
+        loadLevel(engine.level, true);
       }, LEVEL_COMPLETE_DELAY);
       return () => clearTimeout(t);
     }
     if (snapshot.status === "wrong_letter" && snapshot.lives > 0) {
-      // Yanlış harfte kısa bekleme sonra aynı bölümü yeniden yükle
       const t = setTimeout(() => {
         engine.retryLevel();
         publish();
@@ -116,24 +200,29 @@ export function useSnakeGame(): UseSnakeGameApi {
     }
   }, [snapshot.status, snapshot.lives, engine, loadLevel, publish]);
 
-  // --- Dışarı açılan API (klavye effect'inden önce tanımla) ---
+  // --- Dışarı açılan API ---
   const startGame = useCallback(() => {
+    SoundManager.ensureContext();
+    playSfx("start");
+    wordsCompletedThisRunRef.current = 0;
     engine.resetRun();
     recentWordsRef.current = [];
     loadLevel(1);
-  }, [engine, loadLevel]);
+  }, [engine, loadLevel, playSfx]);
 
   const retry = useCallback(() => {
+    playSfx("menu_click");
     engine.retryLevel();
     lastStepRef.current = performance.now();
     accRef.current = 0;
     publish();
-  }, [engine, publish]);
+  }, [engine, publish, playSfx]);
 
   const nextLevel = useCallback(() => {
+    playSfx("menu_click");
     engine.incrementLevel();
-    loadLevel(engine.level);
-  }, [engine, loadLevel]);
+    loadLevel(engine.level, true);
+  }, [engine, loadLevel, playSfx]);
 
   const pause = useCallback(() => {
     if (engine.status === "playing") {
@@ -151,11 +240,30 @@ export function useSnakeGame(): UseSnakeGameApi {
   }, [engine, publish]);
 
   const backToMenu = useCallback(() => {
+    playSfx("menu_click");
     engine.resetAll();
     publish();
-  }, [engine, publish]);
+  }, [engine, publish, playSfx]);
 
-  // En son aksiyonları ref'te tut (klavye handler'ı stale closure yaşamaz)
+  const toggleSound = useCallback(() => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      SoundManager.setEnabled(next);
+      const updated = persistSound(next, statsRef.current);
+      setStats(updated);
+      if (next) SoundManager.play("menu_click");
+      return next;
+    });
+  }, []);
+
+  const resetAllStats = useCallback(() => {
+    const cleared = resetStats();
+    setStats(cleared);
+    setSoundEnabled(cleared.soundEnabled);
+    SoundManager.setEnabled(cleared.soundEnabled);
+  }, []);
+
+  // Ref tabanlı aksiyonlar (klavye handler'ı stale closure yaşamaz)
   const actionsRef = useRef({
     startGame: () => {},
     backToMenu: () => {},
@@ -212,7 +320,7 @@ export function useSnakeGame(): UseSnakeGameApi {
       ? snapshot.targetWord[snapshot.currentLetterIndex]
       : null;
 
-  // Dev test kancası: tarayıcı konsolundan motor durumunu okumayı sağlar.
+  // Dev test kancası
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (process.env.NODE_ENV === "production") return;
@@ -220,6 +328,7 @@ export function useSnakeGame(): UseSnakeGameApi {
       engine,
       setDirection,
       getSnapshot: () => engine.getSnapshot(),
+      sound: SoundManager,
     };
   }, [engine, setDirection]);
 
@@ -233,5 +342,10 @@ export function useSnakeGame(): UseSnakeGameApi {
     backToMenu,
     setDirection,
     nextTargetChar,
+    stats,
+    soundEnabled,
+    toggleSound,
+    resetAllStats,
+    confettiTrigger,
   };
 }
