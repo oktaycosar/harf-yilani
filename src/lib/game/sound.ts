@@ -15,7 +15,9 @@ export type SfxName =
   | "menu_click"
   | "start"
   | "bonus"
-  | "time_warning";
+  | "time_warning"
+  | "boost"
+  | "ice";
 
 class SoundManagerImpl {
   private ctx: AudioContext | null = null;
@@ -98,6 +100,19 @@ class SoundManagerImpl {
         // Kısa tik-tak uyarısı (son 5 saniye)
         this.tone(now, 880, 0.04, "square", 0.25);
         this.tone(now + 0.12, 880, 0.04, "square", 0.25);
+        break;
+      case "boost":
+        // Hız artırıcı: yükselen süpürme (whoosh benzeri)
+        this.tone(now, 400, 0.06, "sawtooth", 0.3);
+        this.tone(now + 0.05, 600, 0.06, "sawtooth", 0.35);
+        this.tone(now + 0.1, 900, 0.08, "sawtooth", 0.4);
+        this.tone(now + 0.18, 1200, 0.1, "sine", 0.35);
+        break;
+      case "ice":
+        // Buz: soğuk kristal ton (yüksek frekans, kısa)
+        this.tone(now, 1568, 0.08, "sine", 0.25);
+        this.tone(now + 0.06, 2093, 0.1, "sine", 0.2);
+        this.tone(now + 0.14, 2637, 0.08, "triangle", 0.15);
         break;
     }
   }

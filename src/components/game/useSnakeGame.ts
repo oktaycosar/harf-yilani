@@ -14,10 +14,14 @@ import {
   LEVEL_COMPLETE_DELAY,
   START_LIVES,
   WRONG_LETTER_DELAY,
+  EASY_MODE_SPEED_MULTIPLIER,
+  EASY_MODE_EXTRA_LIVES,
+  EASY_MODE_NO_OBSTACLES,
 } from "@/lib/game/constants";
 import type { GameSnapshot } from "@/lib/game/types";
 import type { Category } from "@/lib/game/wordDatabase";
 import { SoundManager, type SfxName } from "@/lib/game/sound";
+import { getDailyWord, markDailyCompleted } from "@/lib/game/translations";
 import {
   loadStats,
   recordGameEnd,
@@ -54,6 +58,14 @@ export interface UseSnakeGameApi {
   setCategory: (c: Category) => void;
   /** Liderlik tablosu (top 10) */
   leaderboard: LeaderboardEntry[];
+  /** TR→EN çeviri modu açık mı */
+  showTranslation: boolean;
+  toggleTranslation: () => void;
+  /** Kolay mod (çocuklar için) */
+  easyMode: boolean;
+  toggleEasyMode: () => void;
+  /** Günlük challenge başlat */
+  startDaily: () => void;
 }
 
 export function useSnakeGame(): UseSnakeGameApi {
@@ -64,6 +76,9 @@ export function useSnakeGame(): UseSnakeGameApi {
   const [confettiTrigger, setConfettiTrigger] = useState<number>(0);
   const [category, setCategory] = useState<Category>("karisik");
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(() => loadLeaderboard());
+  const [showTranslation, setShowTranslation] = useState<boolean>(false);
+  const [easyMode, setEasyMode] = useState<boolean>(false);
+  const isDailyModeRef = useRef<boolean>(false);
 
   const recentWordsRef = useRef<string[]>([]);
   const rafRef = useRef<number | null>(null);
@@ -76,6 +91,7 @@ export function useSnakeGame(): UseSnakeGameApi {
   const statsRef = useRef<GameStats>(stats);
   const soundEnabledRef = useRef<boolean>(soundEnabled);
   const categoryRef = useRef<Category>(category);
+  const easyModeRef = useRef<boolean>(easyMode);
   useEffect(() => {
     statsRef.current = stats;
   }, [stats]);
@@ -85,6 +101,9 @@ export function useSnakeGame(): UseSnakeGameApi {
   useEffect(() => {
     categoryRef.current = category;
   }, [category]);
+  useEffect(() => {
+    easyModeRef.current = easyMode;
+  }, [easyMode]);
 
   // İlk yüklemede SoundManager'ı senkronize et
   useEffect(() => {
@@ -102,18 +121,21 @@ export function useSnakeGame(): UseSnakeGameApi {
 
   // --- Bölüm yükleme yardımcısı ---
   const loadLevel = useCallback(
-    (level: number, isAdvancement: boolean = false) => {
+    (level: number, isAdvancement: boolean = false, forcedWord?: string) => {
       const diff = getDifficultyForLevel(level);
-      const { word } = pickWordForLevel(level, recentWordsRef.current, categoryRef.current);
+      const word = forcedWord ?? pickWordForLevel(level, recentWordsRef.current, categoryRef.current).word;
       recentWordsRef.current = [...recentWordsRef.current.slice(-6), word];
+      // Kolay mod: yavaş hız, engel yok
+      const stepMs = easyModeRef.current ? diff.stepMs / EASY_MODE_SPEED_MULTIPLIER : diff.stepMs;
+      const obstacleCount = easyModeRef.current && EASY_MODE_NO_OBSTACLES ? 0 : diff.obstacleCount;
       engine.loadLevel({
         level,
         word,
         tierName: diff.tier.name,
-        stepMs: diff.stepMs,
-        tricky: diff.tier.tricky,
-        obstacleCount: diff.obstacleCount,
-        timed: diff.timed,
+        stepMs,
+        tricky: diff.tier.tricky && !easyModeRef.current,
+        obstacleCount,
+        timed: diff.timed && !easyModeRef.current,
         timeLimitMs: diff.timeLimitMs,
       });
       lastStepRef.current = performance.now();
@@ -130,19 +152,20 @@ export function useSnakeGame(): UseSnakeGameApi {
       if (engine.status === "playing") {
         const rawDt = now - lastStepRef.current;
         lastStepRef.current = now;
-        // dt'yi kırp: sekme arka plandayken rAF durur, geri gelince devasa dt
-        // birikir. Bu, sürenin anında bitmesine ve çoklu time_up olaylarına
-        // yol açar. 100ms ile sınırla (en fazla ~6 adım atlar).
         const dt = Math.min(rawDt, 100);
         // Süreli mod: gerçek zaman akışı (tick bağımsız)
         if (engine.timeLimitMs > 0) {
           engine.updateTime(dt);
         }
-        // Hareket tick'leri
+        // Boost süresi güncelle
+        engine.updateBoost();
+        // Hareket tick'leri — aktif hız çarpanı adım aralığını etkiler
         if (engine.status === "playing") {
+          const mult = engine.getActiveSpeedMultiplier();
+          const effectiveStep = engine.stepMs / mult;
           accRef.current += dt;
-          while (accRef.current >= engine.stepMs) {
-            accRef.current -= engine.stepMs;
+          while (accRef.current >= effectiveStep) {
+            accRef.current -= effectiveStep;
             engine.tick();
             if (engine.status !== "playing") break;
           }
@@ -151,7 +174,7 @@ export function useSnakeGame(): UseSnakeGameApi {
       const s = engine.getSnapshot();
       const ev = s.lastEvent;
       const evSig = `${ev.kind}|${"index" in ev ? ev.index : ""}|${"char" in ev ? ev.char : ""}|${"combo" in ev ? ev.combo : ""}|${"gained" in ev ? ev.gained : ""}`;
-      const sig = `${s.status}|${s.score}|${s.lives}|${s.combo}|${s.level}|${s.currentLetterIndex}|${s.snake.length}|${s.snake[0]?.x ?? -1}|${s.snake[0]?.y ?? -1}|${Math.floor(s.timeRemainingMs / 100)}|${evSig}`;
+      const sig = `${s.status}|${s.score}|${s.lives}|${s.combo}|${s.level}|${s.currentLetterIndex}|${s.snake.length}|${s.snake[0]?.x ?? -1}|${s.snake[0]?.y ?? -1}|${Math.floor(s.timeRemainingMs / 100)}|${Math.floor(s.boostRemainingMs / 100)}|${s.activeSpeedMultiplier.toFixed(2)}|${evSig}`;
 
       // Süre uyarısı: son 5 saniyede her saniye tik-tak
       if (s.timeLimitMs > 0 && s.timeRemainingMs > 0 && s.timeRemainingMs <= 5000) {
@@ -177,10 +200,20 @@ export function useSnakeGame(): UseSnakeGameApi {
           case "ate_bonus":
             playSfx("bonus");
             break;
+          case "boost_collected":
+            playSfx("boost");
+            break;
+          case "ice_entered":
+            playSfx("ice");
+            break;
           case "word_complete":
             playSfx("word_complete");
             wordsCompletedThisRunRef.current += 1;
             setConfettiTrigger((c) => c + 1);
+            // Günlük modda tamamlama işaretle
+            if (isDailyModeRef.current) {
+              markDailyCompleted();
+            }
             {
               const cur = statsRef.current;
               const next: GameStats = {
@@ -269,10 +302,39 @@ export function useSnakeGame(): UseSnakeGameApi {
     SoundManager.ensureContext();
     playSfx("start");
     wordsCompletedThisRunRef.current = 0;
+    isDailyModeRef.current = false;
     engine.resetRun();
+    // Kolay mod: ekstra can
+    if (easyModeRef.current) {
+      engine.setLives(START_LIVES + EASY_MODE_EXTRA_LIVES);
+    }
     recentWordsRef.current = [];
     loadLevel(1);
   }, [engine, loadLevel, playSfx]);
+
+  const startDaily = useCallback(() => {
+    SoundManager.ensureContext();
+    playSfx("start");
+    wordsCompletedThisRunRef.current = 0;
+    isDailyModeRef.current = true;
+    engine.resetRun();
+    const dailyWord = getDailyWord();
+    recentWordsRef.current = [];
+    // Günlük mod: tek bölüm, kelime sabit
+    engine.loadLevel({
+      level: 1,
+      word: dailyWord,
+      tierName: "Günlük",
+      stepMs: easyModeRef.current ? 300 : 200,
+      tricky: false,
+      obstacleCount: 0,
+      timed: false,
+      timeLimitMs: 0,
+    });
+    lastStepRef.current = performance.now();
+    accRef.current = 0;
+    publish();
+  }, [engine, publish, playSfx]);
 
   const retry = useCallback(() => {
     playSfx("menu_click");
@@ -326,6 +388,14 @@ export function useSnakeGame(): UseSnakeGameApi {
     setSoundEnabled(cleared.soundEnabled);
     SoundManager.setEnabled(cleared.soundEnabled);
     setLeaderboard([]);
+  }, []);
+
+  const toggleTranslation = useCallback(() => {
+    setShowTranslation((prev) => !prev);
+  }, []);
+
+  const toggleEasyMode = useCallback(() => {
+    setEasyMode((prev) => !prev);
   }, []);
 
   // Ref tabanlı aksiyonlar (klavye handler'ı stale closure yaşamaz)
@@ -415,5 +485,10 @@ export function useSnakeGame(): UseSnakeGameApi {
     category,
     setCategory,
     leaderboard,
+    showTranslation,
+    toggleTranslation,
+    easyMode,
+    toggleEasyMode,
+    startDaily,
   };
 }

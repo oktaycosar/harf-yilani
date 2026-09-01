@@ -157,6 +157,11 @@ export default function Home() {
               isNewBest={isNewBest}
               category={game.category}
               onSetCategory={game.setCategory}
+              showTranslation={game.showTranslation}
+              onToggleTranslation={game.toggleTranslation}
+              easyMode={game.easyMode}
+              onToggleEasyMode={game.toggleEasyMode}
+              onStartDaily={game.startDaily}
               onStart={game.startGame}
               onRetry={game.retry}
               onContinue={game.nextLevel}

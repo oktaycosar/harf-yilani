@@ -158,3 +158,59 @@ Sonraki tur için öneriler:
 5. Günlük kelime challenges (her gün özel bir kelime).
 6. Confetti efekti geliştir (kelime uzunluğuna göre renk/şekil).
 7. Snake head'e göz/yön oku ekle (VLM önerisi — hareket yönü daha okunaklı).
+
+---
+Task ID: 9 (Cron turu 3 — Buz alanları + Hız artırıcılar + TR→EN + Kolay mod + Günlük challenge)
+Agent: webDevReview cron (Z.ai Code)
+Task: Yeni oyun mekaniği özellikleri ekle (buz alanları, hız artırıcılar, TR→EN çeviri, kolay mod, günlük challenge) + styling polish
+
+Work Log:
+- **Buz alanları** (`snakeEngine.ts` + `types.ts` + `constants.ts`): Yılan üstünden geçince yavaşlar (0.5x hız çarpanı). Bölüm 10+ aktif, 3 adet. Canvas'ta buzlu kare (açık mavi gradient + kristal parıltıları + dönen buz kristali). Yılan buz üzerindeyken mavi tonlara bürünür. `ice_entered` olayı + kristal ses (1568→2093→2637 Hz).
+- **Hız artırıcılar** (`snakeEngine.ts` + `types.ts`): Şimşek ikonu, yılan yiyince 4 saniye boyunca 1.8x hızlanır. Bölüm 12+ aktif. +15 puan. Canvas'ta amber disk + şimşek zigzag + glow halka. Yılan boost halindeyken amber/altın tonlara bürünür + baş çevresinde glow. `boost_collected` olayı + whoosh ses (400→600→900→1200 Hz süpürme).
+- **TR→EN modu** (`translations.ts` + `Overlays.tsx`): 80+ Türkçe kelimenin İngilizce çevirisi. Kelime tamamlandığında LevelComplete overlay'inde "İngilizce: island" gibi çeviri göster. Menüde 🌐 toggle butonu (sky rengi).
+- **Kolay mod (çocuklar için)** (`useSnakeGame.ts` + `constants.ts`): +2 can (toplam 5), 0.6x hız (daha yavaş), engel yok, tricky yerleşim yok, süreli mod kapalı. Menüde Baby ikonlu toggle (amber rengi). `EASY_MODE_*` sabitleri.
+- **Günlük challenge** (`translations.ts` + `Overlays.tsx`): Her gün tarihe göre deterministik kelime (15 orta zorluk kelimeden biri). Tek bölüm, engel/süre yok, +50 bonus. Tamamlandığında localStorage'a işaretlenir, menüde "Bugün tamamlandı! ✅" göster. `getDailyWord()` date-seed fonksiyonu.
+- **Styling polish**:
+  - Buz render: buzlu kare (light blue gradient + 3 dönen sparkle + 6-kollu buz kristali).
+  - Booster render: amber disk + beyaz şimşek zigzag + glow halka + pulse.
+  - Yılan render: boost halinde amber/altın tonlar + baş glow; buz üzerinde mavi-yeşil tonlar.
+  - HUD: boost timer rozeti (Zap ikonu + kalan saniye), buz sayacı (Snowflake ikonu).
+  - Menü: günlük challenge kartı (CalendarClock + hover scale), TR→EN toggle (globe emoji), kolay mod toggle (Baby ikonu).
+  - LevelComplete: TR→EN çeviri "İngilizce: island" satırı (sky rengi, fade-in animasyon).
+  - LivesPill: dinamik toplam can (kolay modda 5 kalp göster).
+- **Ses efektleri**: `boost` (süpürme whoosh), `ice` (kristal ton) eklendi.
+- **Engine refactor**: `getActiveSpeedMultiplier()`, `updateBoost()`, `setLives()` metotları eklendi. Tick döngüsü boost/ice çarpanını hesaba katıyor (`effectiveStep = stepMs / mult`).
+
+QA Doğrulama (agent-browser + VLM + deterministik engine test):
+- Menü: **9/10** polish (VLM) — günlük kartı ✓, TR→EN toggle ✓, kolay mod toggle ✓, kategori seçici ✓.
+- Buz alanları: 3 buzlu kare render (VLM doğruladı "light blue squares with snowflake") ✓.
+- Hız artırıcı: booster toplama → score +15, boostEndTime > 0, mult=1.8, `boost_collected` olayı ✓.
+- TR→EN: ADA tamamlandı → overlay "ADA" + "island" çevirisi ✓ (VLM doğruladı).
+- Günlük challenge: "DENİZ" kelimesi, tier "Günlük", level 1, engel/süre yok ✓.
+- Kolay mod: 5 can (3+2), 366ms hız (normal ~200ms), 0 engel ✓. 5 kalp doğru gösteriliyor ✓.
+- Tüm elementler birlikte: buz + booster + obstacle + bonus + harfler + yılan aynı ekranda ✓ (VLM doğruladı).
+- Lint: ESLint temiz (0 error, 0 warning).
+- Dev server: 3000 portunda çalışıyor.
+
+Stage Summary:
+- Oyun artık buz alanları, hız artırıcılar, TR→EN çeviri, kolay mod ve günlük challenge içeren tam özellikli bir deneyim.
+- 5 yeni oyun mekaniği + 2 yeni ses efekti + TR→EN sözlük + günlük challenge sistemi eklendi.
+- Yılan render'ı bağlama göre dinamik renk değiştiriyor (boost=amber, ice=mavi, normal=emerald, dead=koyu kırmızı, celebrate=parlak yeşil).
+- Tüm özellikler temiz mimariye entegre edildi.
+
+Unresolved issues / risks:
+- Godot projesi güncellenmedi (yalnızca web sürümü). Buz/booster/TR→EN/kolay mod/günlük Godot tarafında yok.
+- TR→EN sözlük 80 kelime içeriyor — daha fazla kelime eklenebilir.
+- Günlük challenge tek bölüm — çok kelimeli günlük serisi eklenebilir.
+- Boost süresi 4s sabit — zorluk kademelerine göre ayarlanabilir.
+- Buz alanları sabit sayıda (3) — bölüme göre artırılabilir.
+
+Sonraki tur için öneriler:
+1. Godot projesini güncelle (buz, booster, TR→EN, kolay mod, günlük challenge).
+2. Daha fazla TR→EN çevirisi ekle (kelime havuzu genişledikçe).
+3. Günlük challenge serisi (3-5 kelimeli günün challenge'ı).
+4. Hız artırıcı süresini zorluğa göre dinamik yap.
+5. Buz alanı sayısını bölüme göre artır.
+6. Yılan head'e göz/yön oku ekle (VLM önerisi).
+7. Kelime tamamlandığında sesli okuma (TTS skill).
+8. Confetti efektini geliştir (kelime uzunluğuna göre).

@@ -108,3 +108,46 @@ export const TIME_BONUS_THRESHOLD = 0.5;
 /** Kalan süre yüzdesi > eşiği geçerse ekstra puan */
 export const TIME_BONUS_POINTS = 30;
 
+// ----------------------------------------------------------------------------
+// BUZ ALANI SİSTEMİ
+// ----------------------------------------------------------------------------
+/** Buz alanlarının başladığı bölüm */
+export const ICE_ZONES_START_LEVEL = 10;
+
+/** Buz alanı sayısı (sabit) */
+export const ICE_ZONE_COUNT = 3;
+
+/** Buz üzerinde yavaşlama çarpanı (0.5 = yarım hız) */
+export const ICE_SLOW_FACTOR = 0.5;
+
+// ----------------------------------------------------------------------------
+// HIZ ARTIRICI SİSTEMİ
+// ----------------------------------------------------------------------------
+/** Hız artırıcıların başladığı bölüm */
+export const SPEED_BOOSTERS_START_LEVEL = 12;
+
+/** Hız artırıcı sayısı (bölüm başına) */
+export const SPEED_BOOSTER_COUNT = 1;
+
+/** Boost çarpanı (2.0 = 2x hız) */
+export const SPEED_BOOST_FACTOR = 1.8;
+
+/** Boost süresi (ms) */
+export const SPEED_BOOST_DURATION_MS = 4000;
+
+/** Boost toplama puanı */
+export const SPEED_BOOST_POINTS = 15;
+
+// ----------------------------------------------------------------------------
+// KOLAY MOD (çocuklar için)
+// ----------------------------------------------------------------------------
+/** Kolay mod hız çarpanı (daha yavaş) */
+export const EASY_MODE_SPEED_MULTIPLIER = 0.6;
+
+/** Kolay mod ekstra can */
+export const EASY_MODE_EXTRA_LIVES = 2;
+
+/** Kolay mod engel yok mu? */
+export const EASY_MODE_NO_OBSTACLES = true;
+
+

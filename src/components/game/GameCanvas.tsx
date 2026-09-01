@@ -112,6 +112,21 @@ function draw(
     drawObstacle(ctx, cx, cy, cell, obs.shape, t);
   }
 
+  // Buz alanları
+  for (const ice of s.iceZones) {
+    const cx = offX + ice.x * cell;
+    const cy = offY + ice.y * cell;
+    drawIce(ctx, cx, cy, cell, t);
+  }
+
+  // Hız artırıcılar
+  for (const booster of s.speedBoosters) {
+    if (booster.eaten) continue;
+    const cx = offX + booster.x * cell + cell / 2;
+    const cy = offY + booster.y * cell + cell / 2;
+    drawBooster(ctx, cx, cy, cell, t + booster.phase);
+  }
+
   // Bonus harfler
   for (const bonus of s.bonusLetters) {
     if (bonus.eaten) continue;
@@ -251,6 +266,120 @@ function drawObstacle(
 }
 
 // ----------------------------------------------------------------------------
+// Buz alanı çizimi — buzlu kare, kristal parıltıları
+// ----------------------------------------------------------------------------
+function drawIce(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  cell: number,
+  time: number
+) {
+  const pad = 2;
+  const w = cell - pad * 2;
+  const h = cell - pad * 2;
+
+  // Buz arka plan (açık mavi-beyaz gradient)
+  const grad = ctx.createLinearGradient(x + pad, y + pad, x + pad + w, y + pad + h);
+  grad.addColorStop(0, "rgba(186, 230, 253, 0.45)");
+  grad.addColorStop(0.5, "rgba(224, 242, 254, 0.55)");
+  grad.addColorStop(1, "rgba(125, 211, 252, 0.4)");
+  ctx.fillStyle = grad;
+  roundRect(ctx, x + pad, y + pad, w, h, 6);
+  ctx.fill();
+
+  // Kenar (buz kristali effect)
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Kristal parıltıları (move slowly)
+  ctx.save();
+  const sparkleCount = 3;
+  for (let i = 0; i < sparkleCount; i++) {
+    const sx = x + cell / 2 + Math.cos(time * 0.8 + i * 2.1) * (cell * 0.2);
+    const sy = y + cell / 2 + Math.sin(time * 0.8 + i * 2.1) * (cell * 0.2);
+    const sr = 1.5 + Math.sin(time * 3 + i) * 0.8;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + Math.sin(time * 4 + i) * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Merkez buz kristali (basit yıldız şekil)
+  ctx.save();
+  ctx.translate(x + cell / 2, y + cell / 2);
+  ctx.rotate(time * 0.3);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+  ctx.lineWidth = 1.2;
+  const r = cell * 0.18;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ----------------------------------------------------------------------------
+// Hız artırıcı çizimi — şimşek ikonu, sarı/amber glow
+// ----------------------------------------------------------------------------
+function drawBooster(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  cell: number,
+  time: number
+) {
+  const pulse = 1 + Math.sin(time * 4) * 0.08;
+  const r = cell * 0.38 * pulse;
+
+  // Dış glow halkası (amber)
+  ctx.save();
+  ctx.shadowColor = "rgba(251, 191, 36, 0.8)";
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Arka plan disk (amber gradient)
+  const grad = ctx.createRadialGradient(cx - r / 3, cy - r / 3, r / 4, cx, cy, r);
+  grad.addColorStop(0, "#fef3c7");
+  grad.addColorStop(0.5, "#f59e0b");
+  grad.addColorStop(1, "#b45309");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Şimşek ikonu (zigzag)
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#7c2d12";
+  ctx.lineWidth = 1;
+  const sw = r * 0.45;
+  const sh = r * 0.7;
+  ctx.beginPath();
+  ctx.moveTo(-sw * 0.3, -sh * 0.5);
+  ctx.lineTo(sw * 0.2, -sh * 0.1);
+  ctx.lineTo(-sw * 0.05, -sh * 0.1);
+  ctx.lineTo(sw * 0.3, sh * 0.5);
+  ctx.lineTo(-sw * 0.2, sh * 0.1);
+  ctx.lineTo(sw * 0.05, sh * 0.1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ----------------------------------------------------------------------------
 // Bonus harf çizimi — altın yıldız + harf
 // ----------------------------------------------------------------------------
 function drawBonus(
@@ -365,10 +494,26 @@ function drawSnake(
   cell: number,
   time: number
 ) {
-  const dead = s.status === "wrong_letter" || s.status === "game_over";
+  const dead = s.status === "wrong_letter" || s.status === "game_over" || s.status === "time_up";
   const celebrate = s.status === "level_complete";
+  const boosted = s.boostRemainingMs > 0;
+  const onIce = s.activeSpeedMultiplier < 1;
   const body = s.snake;
   if (body.length === 0) return;
+
+  // Boost halinde baş çevresinde glow
+  if (boosted && !dead && !celebrate) {
+    const head = body[0];
+    const hx = offX + head.x * cell + cell / 2;
+    const hy = offY + head.y * cell + cell / 2;
+    ctx.save();
+    const glow = 0.5 + Math.sin(time * 10) * 0.5;
+    ctx.fillStyle = `rgba(251, 191, 36, ${0.15 + glow * 0.2})`;
+    ctx.beginPath();
+    ctx.arc(hx, hy, cell * 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   // Gövde segmentleri (kuyruktan başa)
   for (let i = body.length - 1; i >= 0; i--) {
@@ -385,6 +530,14 @@ function drawSnake(
     } else if (celebrate) {
       color1 = "#34d399";
       color2 = "#059669";
+    } else if (boosted) {
+      // Boost: amber/altın tonları
+      color1 = lerpColor("#f59e0b", "#b45309", t);
+      color2 = lerpColor("#d97706", "#78350f", t);
+    } else if (onIce) {
+      // Buz üzerinde: mavi-yeşil tonları
+      color1 = lerpColor("#38bdf8", "#0c4a6e", t);
+      color2 = lerpColor("#0ea5e9", "#082f49", t);
     } else {
       // Baş → kuyruk: emerald tonları
       color1 = lerpColor("#10b981", "#022c22", t);

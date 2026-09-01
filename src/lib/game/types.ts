@@ -47,6 +47,28 @@ export interface BonusLetter {
   phase: number;
 }
 
+/** Buz alanı — yılan üstünden geçince yavaşlar */
+export interface IceZone {
+  id: number;
+  x: number;
+  y: number;
+  /** Yavaşlama çarpanı (0.5 = yarım hız) */
+  slowFactor: number;
+}
+
+/** Hız artırıcı — yılan üstünden geçince geçici hızlanır */
+export interface SpeedBooster {
+  id: number;
+  x: number;
+  y: number;
+  /** Hız çarpanı (2.0 = 2x hız) */
+  boostFactor: number;
+  /** Yenildi mi? */
+  eaten: boolean;
+  /** Animasyon fazı */
+  phase: number;
+}
+
 export type GameStatus =
   | "menu"
   | "playing"
@@ -73,6 +95,14 @@ export interface GameSnapshot {
   obstacles: Obstacle[];
   /** Bonus harfler */
   bonusLetters: BonusLetter[];
+  /** Buz alanları */
+  iceZones: IceZone[];
+  /** Hız artırıcılar */
+  speedBoosters: SpeedBooster[];
+  /** Aktif hız çarpanı (1.0 = normal, <1 yavaş, >1 hızlı) */
+  activeSpeedMultiplier: number;
+  /** Boost bitene kadar kalan ms (0 = boost yok) */
+  boostRemainingMs: number;
   tierName: string;
   stepMs: number;
   /** Yılan */
@@ -92,5 +122,7 @@ export interface GameSnapshot {
     | { kind: "self_collision" }
     | { kind: "wall_collision" }
     | { kind: "obstacle_collision" }
-    | { kind: "time_up" };
+    | { kind: "time_up" }
+    | { kind: "ice_entered" }
+    | { kind: "boost_collected"; gained: number };
 }

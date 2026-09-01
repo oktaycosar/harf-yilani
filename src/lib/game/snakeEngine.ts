@@ -29,15 +29,25 @@ import {
   TURKISH_ALPHABET,
   TIME_BONUS_THRESHOLD,
   TIME_BONUS_POINTS,
+  ICE_ZONE_COUNT,
+  ICE_SLOW_FACTOR,
+  ICE_ZONES_START_LEVEL,
+  SPEED_BOOSTER_COUNT,
+  SPEED_BOOST_FACTOR,
+  SPEED_BOOST_DURATION_MS,
+  SPEED_BOOST_POINTS,
+  SPEED_BOOSTERS_START_LEVEL,
 } from "./constants";
 import type {
   BonusLetter,
   Direction,
   GameSnapshot,
   GameStatus,
+  IceZone,
   LetterEntity,
   Obstacle,
   Point,
+  SpeedBooster,
 } from "./types";
 
 const DIR_VECTORS: Record<Direction, Point> = {
@@ -62,7 +72,9 @@ export type EngineEvent =
   | { kind: "self_collision" }
   | { kind: "wall_collision" }
   | { kind: "obstacle_collision" }
-  | { kind: "time_up" };
+  | { kind: "time_up" }
+  | { kind: "ice_entered" }
+  | { kind: "boost_collected"; gained: number };
 
 export interface LoadLevelOptions {
   level: number;
@@ -87,6 +99,12 @@ export class SnakeEngine {
   letters: LetterEntity[] = [];
   obstacles: Obstacle[] = [];
   bonusLetters: BonusLetter[] = [];
+  iceZones: IceZone[] = [];
+  speedBoosters: SpeedBooster[] = [];
+  /** Aktif boost bitiş zamanı (performance.now(), 0 = boost yok) */
+  boostEndTime = 0;
+  /** Buz üzerinde mi? (bu tick) */
+  onIce = false;
   targetWord = "";
   currentLetterIndex = 0;
   level = 1;
@@ -157,6 +175,20 @@ export class SnakeEngine {
       this.placeBonusLetters(BONUS_LETTER_COUNT);
     }
 
+    // Buz alanlarını yerleştir (bölüm 10+)
+    this.iceZones = [];
+    if (level >= ICE_ZONES_START_LEVEL) {
+      this.placeIceZones(ICE_ZONE_COUNT);
+    }
+
+    // Hız artırıcıları yerleştir (bölüm 12+)
+    this.speedBoosters = [];
+    if (level >= SPEED_BOOSTERS_START_LEVEL) {
+      this.placeSpeedBoosters(SPEED_BOOSTER_COUNT);
+    }
+
+    this.boostEndTime = 0;
+    this.onIce = false;
     this.status = "playing";
   }
 
@@ -301,6 +333,90 @@ export class SnakeEngine {
     this.bonusLetters = bonuses;
   }
 
+  /** Buz alanlarını rastgele yerleştir (yılan koridoru hariç) */
+  private placeIceZones(count: number) {
+    const occupied = new Set<string>();
+    for (const seg of this.snake) occupied.add(`${seg.x},${seg.y}`);
+    for (const l of this.letters) occupied.add(`${l.x},${l.y}`);
+    for (const o of this.obstacles) occupied.add(`${o.x},${o.y}`);
+    for (const b of this.bonusLetters) occupied.add(`${b.x},${b.y}`);
+    // Yılanın ön koridorunu boş bırak
+    const head = this.snake[0];
+    for (let i = 0; i <= 4; i++) {
+      occupied.add(`${head.x + i},${head.y}`);
+    }
+
+    const free: Point[] = [];
+    for (let y = 1; y < this.rows - 1; y++) {
+      for (let x = 1; x < this.cols - 1; x++) {
+        if (!occupied.has(`${x},${y}`)) free.push({ x, y });
+      }
+    }
+    shuffleInPlace(free);
+
+    const zones: IceZone[] = [];
+    for (let i = 0; i < count && free.length > 0; i++) {
+      const cell = free.pop()!;
+      zones.push({ id: i, x: cell.x, y: cell.y, slowFactor: ICE_SLOW_FACTOR });
+    }
+    this.iceZones = zones;
+  }
+
+  /** Hız artırıcıları rastgele yerleştir */
+  private placeSpeedBoosters(count: number) {
+    const occupied = new Set<string>();
+    for (const seg of this.snake) occupied.add(`${seg.x},${seg.y}`);
+    for (const l of this.letters) occupied.add(`${l.x},${l.y}`);
+    for (const o of this.obstacles) occupied.add(`${o.x},${o.y}`);
+    for (const b of this.bonusLetters) occupied.add(`${b.x},${b.y}`);
+    for (const iz of this.iceZones) occupied.add(`${iz.x},${iz.y}`);
+    const head = this.snake[0];
+    for (let i = 0; i <= 4; i++) {
+      occupied.add(`${head.x + i},${head.y}`);
+    }
+
+    const free: Point[] = [];
+    for (let y = 1; y < this.rows - 1; y++) {
+      for (let x = 1; x < this.cols - 1; x++) {
+        if (!occupied.has(`${x},${y}`)) free.push({ x, y });
+      }
+    }
+    shuffleInPlace(free);
+
+    const boosters: SpeedBooster[] = [];
+    for (let i = 0; i < count && free.length > 0; i++) {
+      const cell = free.pop()!;
+      boosters.push({
+        id: i,
+        x: cell.x,
+        y: cell.y,
+        boostFactor: SPEED_BOOST_FACTOR,
+        eaten: false,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+    this.speedBoosters = boosters;
+  }
+
+  /** Aktif hız çarpanını hesapla (boost + ice etkisi) */
+  getActiveSpeedMultiplier(): number {
+    let mult = 1;
+    if (this.boostEndTime > 0 && performance.now() < this.boostEndTime) {
+      mult *= SPEED_BOOST_FACTOR;
+    }
+    if (this.onIce) {
+      mult *= ICE_SLOW_FACTOR;
+    }
+    return mult;
+  }
+
+  /** Boost bitiş zamanını güncelle (rAF döngüsünden) */
+  updateBoost() {
+    if (this.boostEndTime > 0 && performance.now() >= this.boostEndTime) {
+      this.boostEndTime = 0;
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Girdi
   // --------------------------------------------------------------------------
@@ -353,10 +469,14 @@ export class SnakeEngine {
 
     // Bonus harf kontrolü (önce — çünkü bonus yendiğinde büyür ama sıra etkilenmez)
     const bonus = this.bonusLetters.find((b) => !b.eaten && b.x === newHead.x && b.y === newHead.y);
+    const booster = this.speedBoosters.find((b) => !b.eaten && b.x === newHead.x && b.y === newHead.y);
     const letter = this.findLetterAt(newHead.x, newHead.y);
 
-    // Büyüme kontrolü: doğru harf VEYA bonus yenecekse kuyruk kalkmaz
-    const willGrow = (!!letter && !letter.eaten && letter.orderIndex === this.currentLetterIndex) || !!bonus;
+    // Büyüme kontrolü: doğru harf VEYA bonus/booster yenecekse kuyruk kalkmaz
+    const willGrow =
+      (!!letter && !letter.eaten && letter.orderIndex === this.currentLetterIndex) ||
+      !!bonus ||
+      !!booster;
 
     // Kendine çarpma kontrolü
     const bodyToCheck = willGrow ? this.snake : this.snake.slice(0, -1);
@@ -368,13 +488,30 @@ export class SnakeEngine {
     // Hareket
     this.snake.unshift(newHead);
 
+    // Buz alanı kontrolü (yeni baş pozisyonunda)
+    const wasOnIce = this.onIce;
+    this.onIce = this.iceZones.some((iz) => iz.x === newHead.x && iz.y === newHead.y);
+    if (this.onIce && !wasOnIce) {
+      // Buz alanına ilk girişte olay
+      this.lastEvent = { kind: "ice_entered" };
+      this.onEvent?.({ kind: "ice_entered" });
+    }
+
+    // Hız artırıcı toplama
+    if (booster && !booster.eaten) {
+      booster.eaten = true;
+      this.boostEndTime = performance.now() + SPEED_BOOST_DURATION_MS;
+      this.score += SPEED_BOOST_POINTS;
+      this.lastEvent = { kind: "boost_collected", gained: SPEED_BOOST_POINTS };
+      this.onEvent?.({ kind: "boost_collected", gained: SPEED_BOOST_POINTS });
+    }
+
     // Bonus harf yeme
     if (bonus && !bonus.eaten) {
       bonus.eaten = true;
       this.score += bonus.value;
       this.lastEvent = { kind: "ate_bonus", char: bonus.char, gained: bonus.value };
       this.onEvent?.({ kind: "ate_bonus", char: bonus.char, gained: bonus.value });
-      // Bonus yendi: kuyruk silme (büyü) — return yok, normal harf de olabilir
     }
 
     // Hedef harf kontrolü
@@ -451,6 +588,11 @@ export class SnakeEngine {
     this.status = s;
   }
 
+  /** Can sayısını ayarla (kolay mod için) */
+  setLives(lives: number) {
+    this.lives = lives;
+  }
+
   incrementLevel() {
     this.level += 1;
   }
@@ -479,6 +621,10 @@ export class SnakeEngine {
     this.status = "menu";
     this.obstacles = [];
     this.bonusLetters = [];
+    this.iceZones = [];
+    this.speedBoosters = [];
+    this.boostEndTime = 0;
+    this.onIce = false;
     this.timeLimitMs = 0;
     this.timeRemainingMs = 0;
   }
@@ -496,6 +642,10 @@ export class SnakeEngine {
       letters: this.letters.map((l) => ({ ...l })),
       obstacles: this.obstacles.map((o) => ({ ...o })),
       bonusLetters: this.bonusLetters.map((b) => ({ ...b })),
+      iceZones: this.iceZones.map((iz) => ({ ...iz })),
+      speedBoosters: this.speedBoosters.map((b) => ({ ...b })),
+      activeSpeedMultiplier: this.getActiveSpeedMultiplier(),
+      boostRemainingMs: this.boostEndTime > 0 ? Math.max(0, this.boostEndTime - performance.now()) : 0,
       tierName: this.tierName,
       stepMs: this.stepMs,
       timeLimitMs: this.timeLimitMs,

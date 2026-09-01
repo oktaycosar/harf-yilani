@@ -5,7 +5,7 @@
 // + kelime ilerleme çubuğu + en iyi skor rozeti
 // ============================================================================
 
-import { Heart, Sparkles, Trophy, Gauge, Timer, Boxes, Star } from "lucide-react";
+import { Heart, Sparkles, Trophy, Gauge, Timer, Boxes, Star, Zap, Snowflake } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { GameSnapshot } from "@/lib/game/types";
@@ -94,8 +94,8 @@ export function HUD({ snapshot, nextTargetChar, bestScore }: Props) {
           </div>
         )}
 
-        {/* Süre + Engel + Bonus göstergeleri */}
-        {targetWord.length > 0 && (timed || snapshot.obstacles.length > 0 || snapshot.bonusLetters.some((b) => !b.eaten)) && (
+        {/* Süre + Engel + Bonus + Boost + Buz göstergeleri */}
+        {targetWord.length > 0 && (timed || snapshot.obstacles.length > 0 || snapshot.bonusLetters.some((b) => !b.eaten) || snapshot.boostRemainingMs > 0 || snapshot.iceZones.length > 0) && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {timed && (
               <div className="flex flex-1 items-center gap-1.5">
@@ -114,6 +114,17 @@ export function HUD({ snapshot, nextTargetChar, bestScore }: Props) {
                 </div>
               </div>
             )}
+            {snapshot.boostRemainingMs > 0 && (
+              <motion.span
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="inline-flex items-center gap-1 rounded-md bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300 ring-1 ring-amber-500/40"
+                title="Hız boostu aktif"
+              >
+                <Zap className="h-3 w-3 fill-amber-400" />
+                {(snapshot.boostRemainingMs / 1000).toFixed(1)}s
+              </motion.span>
+            )}
             {snapshot.obstacles.length > 0 && (
               <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-300" title="Engel sayısı">
                 <Boxes className="h-3 w-3" />
@@ -124,6 +135,12 @@ export function HUD({ snapshot, nextTargetChar, bestScore }: Props) {
               <span className="inline-flex items-center gap-1 rounded-md bg-purple-500/10 px-2 py-0.5 text-[10px] font-semibold text-purple-300" title="Bonus harf">
                 <Star className="h-3 w-3" />
                 {snapshot.bonusLetters.filter((b) => !b.eaten).length}
+              </span>
+            )}
+            {snapshot.iceZones.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-300" title="Buz alanı">
+                <Snowflake className="h-3 w-3" />
+                {snapshot.iceZones.length}
               </span>
             )}
           </div>
@@ -201,7 +218,8 @@ function ScorePill({ score, bestScore }: { score: number; bestScore: number }) {
 }
 
 function LivesPill({ lives }: { lives: number }) {
-  const total = START_LIVES;
+  // Toplam can sayısını dinamik hesapla (kolay modda 5 olabilir)
+  const total = Math.max(START_LIVES, lives);
   return (
     <span className="inline-flex items-center gap-1 rounded-lg bg-rose-500/10 px-2.5 py-1.5">
       {Array.from({ length: total }).map((_, i) => (
