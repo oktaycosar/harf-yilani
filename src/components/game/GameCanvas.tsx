@@ -104,8 +104,23 @@ function draw(
   // Izgara çizgileri (hafif)
   drawGrid(ctx, offX, offY, cell);
 
-  // Harfler
+  // Engeller
   const t = performance.now() / 1000;
+  for (const obs of s.obstacles) {
+    const cx = offX + obs.x * cell + cell / 2;
+    const cy = offY + obs.y * cell + cell / 2;
+    drawObstacle(ctx, cx, cy, cell, obs.shape, t);
+  }
+
+  // Bonus harfler
+  for (const bonus of s.bonusLetters) {
+    if (bonus.eaten) continue;
+    const cx = offX + bonus.x * cell + cell / 2;
+    const cy = offY + bonus.y * cell + cell / 2;
+    drawBonus(ctx, cx, cy, cell, bonus.char, t + bonus.phase);
+  }
+
+  // Harfler
   for (const letter of s.letters) {
     if (letter.eaten) continue;
     const cx = offX + letter.x * cell + cell / 2;
@@ -118,8 +133,9 @@ function draw(
   drawSnake(ctx, s, offX, offY, cell, t);
 
   // Hatalı harf / ölüm efekti
-  if (s.status === "wrong_letter" || s.status === "game_over") {
-    ctx.fillStyle = "rgba(127, 29, 29, 0.28)";
+  if (s.status === "wrong_letter" || s.status === "game_over" || s.status === "time_up") {
+    const isTime = s.status === "time_up";
+    ctx.fillStyle = isTime ? "rgba(180, 83, 9, 0.30)" : "rgba(127, 29, 29, 0.28)";
     ctx.fillRect(offX, offY, boardW, boardH);
   }
   if (s.status === "level_complete") {
@@ -167,6 +183,128 @@ function drawGrid(ctx: CanvasRenderingContext2D, offX: number, offY: number, cel
     ctx.stroke();
   }
   ctx.restore();
+}
+
+// ----------------------------------------------------------------------------
+// Engel çizimi
+// ----------------------------------------------------------------------------
+function drawObstacle(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  cell: number,
+  shape: "block" | "spike",
+  time: number
+) {
+  const half = cell * 0.42;
+  if (shape === "block") {
+    // Taş blok
+    const grad = ctx.createLinearGradient(cx - half, cy - half, cx + half, cy + half);
+    grad.addColorStop(0, "#475569");
+    grad.addColorStop(1, "#1e293b");
+    ctx.fillStyle = grad;
+    roundRect(ctx, cx - half, cy - half, half * 2, half * 2, 4);
+    ctx.fill();
+    // Üst highlight
+    ctx.fillStyle = "rgba(148, 163, 184, 0.25)";
+    roundRect(ctx, cx - half + 2, cy - half + 2, half * 2 - 4, 4, 2);
+    ctx.fill();
+    // Çatlak
+    ctx.strokeStyle = "rgba(15, 23, 42, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - half / 2, cy);
+    ctx.lineTo(cx + half / 3, cy - half / 3);
+    ctx.lineTo(cx + half / 2, cy + half / 4);
+    ctx.stroke();
+  } else {
+    // Spike — dönen tehlike işareti
+    const pulse = 1 + Math.sin(time * 3) * 0.08;
+    const r = half * pulse;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(time * 0.5);
+    // Arka glow
+    ctx.shadowColor = "rgba(244, 63, 94, 0.6)";
+    ctx.shadowBlur = 12;
+    // Yıldız spike
+    ctx.fillStyle = "#ef4444";
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const rad = i % 2 === 0 ? r : r * 0.5;
+      const px = Math.cos(a) * rad;
+      const py = Math.sin(a) * rad;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // İç nokta
+    ctx.fillStyle = "#fef2f2";
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Bonus harf çizimi — altın yıldız + harf
+// ----------------------------------------------------------------------------
+function drawBonus(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  cell: number,
+  char: string,
+  time: number
+) {
+  const pulse = 1 + Math.sin(time * 3.5) * 0.06;
+  const r = cell * 0.4 * pulse;
+
+  // Dış halka glow
+  ctx.save();
+  ctx.shadowColor = "rgba(168, 85, 247, 0.7)";
+  ctx.shadowBlur = 16;
+  ctx.strokeStyle = "rgba(168, 85, 247, 0.6)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Mor yıldız arka plan
+  const grad = ctx.createRadialGradient(cx - r / 3, cy - r / 3, r / 4, cx, cy, r);
+  grad.addColorStop(0, "#f3e8ff");
+  grad.addColorStop(0.5, "#a855f7");
+  grad.addColorStop(1, "#6b21a8");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  // 5 köşeli yıldız
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const rad = i % 2 === 0 ? r : r * 0.55;
+    const px = cx + Math.cos(a) * rad;
+    const py = cy + Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // İnce kenar
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(107, 33, 168, 0.9)";
+  ctx.stroke();
+
+  // Harf
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `800 ${Math.floor(cell * 0.42)}px ${FONT_FAMILY}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(char, cx, cy + cell * 0.02);
 }
 
 function drawLetter(

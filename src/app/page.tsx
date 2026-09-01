@@ -124,6 +124,7 @@ export default function Home() {
             <SettingsDialog
               stats={game.stats}
               soundEnabled={game.soundEnabled}
+              leaderboard={game.leaderboard}
               onToggleSound={(v) => {
                 if (v !== game.soundEnabled) game.toggleSound();
               }}
@@ -154,6 +155,8 @@ export default function Home() {
               nextTargetChar={nextTargetChar}
               stats={game.stats}
               isNewBest={isNewBest}
+              category={game.category}
+              onSetCategory={game.setCategory}
               onStart={game.startGame}
               onRetry={game.retry}
               onContinue={game.nextLevel}

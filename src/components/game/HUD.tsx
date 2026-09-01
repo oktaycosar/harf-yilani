@@ -5,7 +5,7 @@
 // + kelime ilerleme çubuğu + en iyi skor rozeti
 // ============================================================================
 
-import { Heart, Sparkles, Zap, Trophy, Gauge } from "lucide-react";
+import { Heart, Sparkles, Trophy, Gauge, Timer, Boxes, Star } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { GameSnapshot } from "@/lib/game/types";
@@ -20,6 +20,11 @@ interface Props {
 export function HUD({ snapshot, nextTargetChar, bestScore }: Props) {
   const { level, targetWord, currentLetterIndex, score, lives, combo, tierName, stepMs } = snapshot;
   const progress = targetWord.length > 0 ? (currentLetterIndex / targetWord.length) * 100 : 0;
+  const timed = snapshot.timeLimitMs > 0;
+  const timePercent = timed ? (snapshot.timeRemainingMs / snapshot.timeLimitMs) * 100 : 0;
+  const timeSec = Math.max(0, Math.ceil(snapshot.timeRemainingMs / 1000));
+  const timeLow = timed && timeSec <= 5;
+  const timeMid = timed && timeSec <= 10 && timeSec > 5;
 
   return (
     <div className="w-full">
@@ -86,6 +91,41 @@ export function HUD({ snapshot, nextTargetChar, bestScore }: Props) {
                 transition={{ type: "spring", stiffness: 200, damping: 24 }}
               />
             </div>
+          </div>
+        )}
+
+        {/* Süre + Engel + Bonus göstergeleri */}
+        {targetWord.length > 0 && (timed || snapshot.obstacles.length > 0 || snapshot.bonusLetters.some((b) => !b.eaten)) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {timed && (
+              <div className="flex flex-1 items-center gap-1.5">
+                <Timer className={cn("h-3.5 w-3.5", timeLow ? "text-rose-400" : timeMid ? "text-amber-400" : "text-slate-400")} />
+                <span className={cn("text-[11px] font-bold tabular-nums", timeLow ? "text-rose-400" : timeMid ? "text-amber-400" : "text-slate-300")}>
+                  {timeSec}s
+                </span>
+                <div className="h-1 flex-[2] overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-[width] duration-100",
+                      timeLow ? "bg-rose-500" : timeMid ? "bg-amber-500" : "bg-emerald-500"
+                    )}
+                    style={{ width: `${timePercent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {snapshot.obstacles.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-300" title="Engel sayısı">
+                <Boxes className="h-3 w-3" />
+                {snapshot.obstacles.length}
+              </span>
+            )}
+            {snapshot.bonusLetters.some((b) => !b.eaten) && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-purple-500/10 px-2 py-0.5 text-[10px] font-semibold text-purple-300" title="Bonus harf">
+                <Star className="h-3 w-3" />
+                {snapshot.bonusLetters.filter((b) => !b.eaten).length}
+              </span>
+            )}
           </div>
         )}
       </div>

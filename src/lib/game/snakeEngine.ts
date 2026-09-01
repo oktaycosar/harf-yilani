@@ -8,6 +8,11 @@
 // Önemli: Aynı harften birden fazla olan kelimelerde (örn. KAKA, ADAM) doğru
 // sırayı garanti etmek için her harf objesine kendi orderIndex'i verilir.
 // Çarpışma kontrolü orderIndex === currentLetterIndex karşılaştırması yapar.
+//
+// Ek sistemler:
+//  - Engeller (obstacles): yılan çarpınca can kaybı
+//  - Bonus harfler (bonusLetters): sıra dışı, ekstra puan
+//  - Süreli mod (timed): bölüm süresi dolunca can kaybı
 // ============================================================================
 
 import {
@@ -18,8 +23,22 @@ import {
   SCORE_PER_LETTER,
   SCORE_WORD_BONUS,
   COMBO_BONUS,
+  BONUS_LETTER_COUNT,
+  BONUS_LETTER_VALUE,
+  OBSTACLES_MAX,
+  TURKISH_ALPHABET,
+  TIME_BONUS_THRESHOLD,
+  TIME_BONUS_POINTS,
 } from "./constants";
-import type { Direction, GameSnapshot, GameStatus, LetterEntity, Point } from "./types";
+import type {
+  BonusLetter,
+  Direction,
+  GameSnapshot,
+  GameStatus,
+  LetterEntity,
+  Obstacle,
+  Point,
+} from "./types";
 
 const DIR_VECTORS: Record<Direction, Point> = {
   up: { x: 0, y: -1 },
@@ -38,9 +57,23 @@ const OPPOSITE: Record<Direction, Direction> = {
 export type EngineEvent =
   | { kind: "ate_correct"; char: string; index: number; combo: number; gained: number }
   | { kind: "ate_wrong"; char: string; expected: string }
+  | { kind: "ate_bonus"; char: string; gained: number }
   | { kind: "word_complete"; word: string; bonus: number }
   | { kind: "self_collision" }
-  | { kind: "wall_collision" };
+  | { kind: "wall_collision" }
+  | { kind: "obstacle_collision" }
+  | { kind: "time_up" };
+
+export interface LoadLevelOptions {
+  level: number;
+  word: string;
+  tierName: string;
+  stepMs: number;
+  tricky: boolean;
+  obstacleCount?: number;
+  timed?: boolean;
+  timeLimitMs?: number;
+}
 
 export class SnakeEngine {
   readonly cols: number;
@@ -52,6 +85,8 @@ export class SnakeEngine {
   direction: Direction = "right";
   private pendingDirection: Direction = "right";
   letters: LetterEntity[] = [];
+  obstacles: Obstacle[] = [];
+  bonusLetters: BonusLetter[] = [];
   targetWord = "";
   currentLetterIndex = 0;
   level = 1;
@@ -62,11 +97,12 @@ export class SnakeEngine {
   status: GameStatus = "menu";
   tierName = "Başlangıç";
   stepMs = 200;
+  timeLimitMs = 0;
+  timeRemainingMs = 0;
   lastEvent: GameSnapshot["lastEvent"] = { kind: "none" };
 
   // Son level kurulum parametreleri (retry için saklanır)
-  private loadedWord = "ADAM";
-  private loadedTricky = false;
+  private loadedOpts: LoadLevelOptions | null = null;
 
   onEvent?: (e: EngineEvent) => void;
 
@@ -79,17 +115,23 @@ export class SnakeEngine {
   // --------------------------------------------------------------------------
   // Bölüm yükleme
   // --------------------------------------------------------------------------
-  loadLevel(level: number, word: string, tierName: string, stepMs: number, tricky: boolean) {
+  loadLevel(opts: LoadLevelOptions) {
+    const { level, word, tierName, stepMs, tricky } = opts;
     this.level = level;
     this.targetWord = word.toUpperCase();
     this.currentLetterIndex = 0;
     this.letters = [];
+    this.obstacles = [];
+    this.bonusLetters = [];
     this.combo = 0;
     this.tierName = tierName;
     this.stepMs = stepMs;
-    this.loadedWord = word;
-    this.loadedTricky = tricky;
+    this.loadedOpts = opts;
     this.lastEvent = { kind: "none" };
+
+    // Süreli mod
+    this.timeLimitMs = opts.timed ? opts.timeLimitMs ?? 0 : 0;
+    this.timeRemainingMs = this.timeLimitMs;
 
     // Yılanı başlat (ortada, sağa bakar)
     const cx = Math.floor(this.cols / 2) - Math.floor(this.startLength / 2);
@@ -103,6 +145,18 @@ export class SnakeEngine {
 
     // Harfleri yerleştir
     this.placeLetters(tricky);
+
+    // Engelleri yerleştir
+    const obstacleCount = Math.min(OBSTACLES_MAX, opts.obstacleCount ?? 0);
+    if (obstacleCount > 0) {
+      this.placeObstacles(obstacleCount);
+    }
+
+    // Bonus harfleri yerleştir
+    if (BONUS_LETTER_COUNT > 0) {
+      this.placeBonusLetters(BONUS_LETTER_COUNT);
+    }
+
     this.status = "playing";
   }
 
@@ -111,18 +165,20 @@ export class SnakeEngine {
     const word = this.targetWord;
     const occupied = new Set<string>();
     for (const seg of this.snake) occupied.add(`${seg.x},${seg.y}`);
+    // Yılanın önündeki 3 hücreyi de boş bırak (ilk hareket için güvenli alan)
+    const head = this.snake[0];
+    for (let i = 1; i <= 3; i++) {
+      occupied.add(`${head.x + i},${head.y}`);
+    }
 
-    // Tüm boş hücreleri topla
     const free: Point[] = [];
     for (let y = 1; y < this.rows - 1; y++) {
       for (let x = 1; x < this.cols - 1; x++) {
         if (!occupied.has(`${x},${y}`)) free.push({ x, y });
       }
     }
-    // Karıştır
     shuffleInPlace(free);
 
-    // Harf objeleri
     const entities: LetterEntity[] = [];
     for (let i = 0; i < word.length; i++) {
       entities.push({
@@ -137,11 +193,8 @@ export class SnakeEngine {
     }
 
     if (tricky) {
-      // Zor mod: ardışık harfleri olabildiğince uzağa yerleştir
-      // (yılan uzun mesafe kat etmek zorunda kalır)
       this.placeTricky(entities, free);
     } else {
-      // Basit yerleştirme: rastgele
       for (const e of entities) {
         const cell = free.pop();
         if (!cell) break;
@@ -153,14 +206,12 @@ export class SnakeEngine {
   }
 
   private placeTricky(entities: LetterEntity[], free: Point[]) {
-    // İlk harfi rastgele seç
     if (free.length === 0 || entities.length === 0) return;
     const firstIdx = Math.floor(Math.random() * free.length);
     const first = free.splice(firstIdx, 1)[0];
     entities[0].x = first.x;
     entities[0].y = first.y;
 
-    // Sonraki her harfi, bir önceki harfe en uzak boş hücre olarak seç
     for (let i = 1; i < entities.length; i++) {
       const prev = entities[i - 1];
       let bestIdx = 0;
@@ -168,7 +219,6 @@ export class SnakeEngine {
       for (let j = 0; j < free.length; j++) {
         const c = free[j];
         const d = (c.x - prev.x) ** 2 + (c.y - prev.y) ** 2;
-        // Biraz rastgelelik kat
         const score = d * (0.8 + Math.random() * 0.4);
         if (score > bestDist) {
           bestDist = score;
@@ -182,14 +232,100 @@ export class SnakeEngine {
     }
   }
 
+  /** Engelleri rastgele yerleştir (yılan başlangıcı + harflerden uzak) */
+  private placeObstacles(count: number) {
+    const occupied = new Set<string>();
+    for (const seg of this.snake) occupied.add(`${seg.x},${seg.y}`);
+    // Yılanın önündeki güvenli koridor
+    const head = this.snake[0];
+    for (let i = 0; i <= 5; i++) {
+      occupied.add(`${head.x + i},${head.y}`);
+      occupied.add(`${head.x + i},${head.y - 1}`);
+      occupied.add(`${head.x + i},${head.y + 1}`);
+    }
+    for (const l of this.letters) occupied.add(`${l.x},${l.y}`);
+
+    const free: Point[] = [];
+    for (let y = 2; y < this.rows - 2; y++) {
+      for (let x = 2; x < this.cols - 2; x++) {
+        if (!occupied.has(`${x},${y}`)) free.push({ x, y });
+      }
+    }
+    shuffleInPlace(free);
+
+    const obstacles: Obstacle[] = [];
+    for (let i = 0; i < count && free.length > 0; i++) {
+      const cell = free.pop()!;
+      obstacles.push({
+        id: i,
+        x: cell.x,
+        y: cell.y,
+        shape: Math.random() > 0.5 ? "block" : "spike",
+      });
+      // Engel etrafındaki hücreleri de engelle (cluster önleme — çok sıkışmasın)
+      occupied.add(`${cell.x},${cell.y}`);
+    }
+    this.obstacles = obstacles;
+  }
+
+  /** Bonus harfleri rastgele yerleştir */
+  private placeBonusLetters(count: number) {
+    const occupied = new Set<string>();
+    for (const seg of this.snake) occupied.add(`${seg.x},${seg.y}`);
+    for (const l of this.letters) occupied.add(`${l.x},${l.y}`);
+    for (const o of this.obstacles) occupied.add(`${o.x},${o.y}`);
+
+    const free: Point[] = [];
+    for (let y = 1; y < this.rows - 1; y++) {
+      for (let x = 1; x < this.cols - 1; x++) {
+        if (!occupied.has(`${x},${y}`)) free.push({ x, y });
+      }
+    }
+    shuffleInPlace(free);
+
+    const bonuses: BonusLetter[] = [];
+    const alpha = TURKISH_ALPHABET;
+    for (let i = 0; i < count && free.length > 0; i++) {
+      const cell = free.pop()!;
+      const ch = alpha[Math.floor(Math.random() * alpha.length)];
+      bonuses.push({
+        id: i,
+        x: cell.x,
+        y: cell.y,
+        char: ch,
+        value: BONUS_LETTER_VALUE,
+        eaten: false,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+    this.bonusLetters = bonuses;
+  }
+
   // --------------------------------------------------------------------------
   // Girdi
   // --------------------------------------------------------------------------
   setDirection(dir: Direction) {
     if (this.status !== "playing") return;
-    // Ters yöne dönüşü engelle (anında ölümü önler)
     if (dir === OPPOSITE[this.direction]) return;
     this.pendingDirection = dir;
+  }
+
+  // --------------------------------------------------------------------------
+  // Süre güncelleme (rAF döngüsünden dt ile çağrılır)
+  // --------------------------------------------------------------------------
+  updateTime(dtMs: number) {
+    if (this.status !== "playing" || this.timeLimitMs <= 0) return;
+    // Zaten süre dolduysa tekrar tetikleme
+    if (this.timeRemainingMs <= 0) return;
+    this.timeRemainingMs = Math.max(0, this.timeRemainingMs - dtMs);
+    if (this.timeRemainingMs <= 0) {
+      this.combo = 0;
+      this.lives -= 1;
+      this.status = "time_up";
+      this.lastEvent = { kind: "time_up" };
+      this.onEvent?.({ kind: "time_up" });
+      if (this.lives <= 0) this.status = "game_over";
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -198,7 +334,6 @@ export class SnakeEngine {
   tick() {
     if (this.status !== "playing") return;
 
-    // Yönü uygula
     this.direction = this.pendingDirection;
     const vec = DIR_VECTORS[this.direction];
     const head = this.snake[0];
@@ -206,31 +341,43 @@ export class SnakeEngine {
 
     // Duvar kontrolü
     if (newHead.x < 0 || newHead.y < 0 || newHead.x >= this.cols || newHead.y >= this.rows) {
-      this.status = "wrong_letter"; // bölüm başarısız
-      this.lives -= 1;
-      this.lastEvent = { kind: "wall_collision" };
-      this.onEvent?.({ kind: "wall_collision" });
-      if (this.lives <= 0) this.status = "game_over";
+      this.failWith("wall_collision");
       return;
     }
 
-    // Kendine çarpma kontrolü (kuyruk hareket edeceği için, son segment hariç)
-    const willGrow = this.headHitsLetter(newHead);
+    // Engel kontrolü
+    if (this.obstacles.some((o) => o.x === newHead.x && o.y === newHead.y)) {
+      this.failWith("obstacle_collision");
+      return;
+    }
+
+    // Bonus harf kontrolü (önce — çünkü bonus yendiğinde büyür ama sıra etkilenmez)
+    const bonus = this.bonusLetters.find((b) => !b.eaten && b.x === newHead.x && b.y === newHead.y);
+    const letter = this.findLetterAt(newHead.x, newHead.y);
+
+    // Büyüme kontrolü: doğru harf VEYA bonus yenecekse kuyruk kalkmaz
+    const willGrow = (!!letter && !letter.eaten && letter.orderIndex === this.currentLetterIndex) || !!bonus;
+
+    // Kendine çarpma kontrolü
     const bodyToCheck = willGrow ? this.snake : this.snake.slice(0, -1);
     if (bodyToCheck.some((s) => s.x === newHead.x && s.y === newHead.y)) {
-      this.status = "wrong_letter";
-      this.lives -= 1;
-      this.lastEvent = { kind: "self_collision" };
-      this.onEvent?.({ kind: "self_collision" });
-      if (this.lives <= 0) this.status = "game_over";
+      this.failWith("self_collision");
       return;
     }
 
     // Hareket
     this.snake.unshift(newHead);
 
-    // Harf kontrolü
-    const letter = this.findLetterAt(newHead.x, newHead.y);
+    // Bonus harf yeme
+    if (bonus && !bonus.eaten) {
+      bonus.eaten = true;
+      this.score += bonus.value;
+      this.lastEvent = { kind: "ate_bonus", char: bonus.char, gained: bonus.value };
+      this.onEvent?.({ kind: "ate_bonus", char: bonus.char, gained: bonus.value });
+      // Bonus yendi: kuyruk silme (büyü) — return yok, normal harf de olabilir
+    }
+
+    // Hedef harf kontrolü
     if (letter && !letter.eaten) {
       if (letter.orderIndex === this.currentLetterIndex) {
         // DOĞRU harf
@@ -249,14 +396,23 @@ export class SnakeEngine {
         };
         this.onEvent?.({ kind: "ate_correct", char: letter.char, index: letter.orderIndex, combo: this.combo, gained });
 
-        // Kelime tamamlandı mı?
         if (this.currentLetterIndex >= this.targetWord.length) {
+          // Süre bonusu
+          let timeBonus = 0;
+          if (this.timeLimitMs > 0 && this.timeRemainingMs / this.timeLimitMs > TIME_BONUS_THRESHOLD) {
+            timeBonus = TIME_BONUS_POINTS;
+            this.score += timeBonus;
+          }
           this.score += SCORE_WORD_BONUS;
           this.status = "level_complete";
-          this.lastEvent = { kind: "word_complete", word: this.targetWord, bonus: SCORE_WORD_BONUS };
-          this.onEvent?.({ kind: "word_complete", word: this.targetWord, bonus: SCORE_WORD_BONUS });
+          this.lastEvent = {
+            kind: "word_complete",
+            word: this.targetWord,
+            bonus: SCORE_WORD_BONUS + timeBonus,
+          };
+          this.onEvent?.({ kind: "word_complete", word: this.targetWord, bonus: SCORE_WORD_BONUS + timeBonus });
         }
-        // büyüme: kuyruğu silme (yukarıda unshift ettik, pop yapmıyoruz)
+        // büyüme: kuyruk silme
       } else {
         // YANLIŞ harf
         this.combo = 0;
@@ -266,18 +422,22 @@ export class SnakeEngine {
         this.lastEvent = { kind: "ate_wrong", char: letter.char, expected };
         this.onEvent?.({ kind: "ate_wrong", char: letter.char, expected });
         if (this.lives <= 0) this.status = "game_over";
-        // yanlış harfte yılan uzamaz -> kuyruğu sil
         this.snake.pop();
         return;
       }
-    } else {
+    } else if (!bonus) {
       // Normal hareket: kuyruğu sil
       this.snake.pop();
     }
   }
 
-  private headHitsLetter(p: Point): boolean {
-    return this.letters.some((l) => !l.eaten && l.x === p.x && l.y === p.y && l.orderIndex === this.currentLetterIndex);
+  private failWith(kind: "wall_collision" | "self_collision" | "obstacle_collision") {
+    this.combo = 0;
+    this.lives -= 1;
+    this.status = "wrong_letter";
+    this.lastEvent = { kind };
+    this.onEvent?.({ kind });
+    if (this.lives <= 0) this.status = "game_over";
   }
 
   private findLetterAt(x: number, y: number): LetterEntity | undefined {
@@ -287,17 +447,14 @@ export class SnakeEngine {
   // --------------------------------------------------------------------------
   // Bölüm yönetimi
   // --------------------------------------------------------------------------
-  /** Durumu güncelle (React useState immutability kuralına uyum için metot) */
   setStatus(s: GameStatus) {
     this.status = s;
   }
 
-  /** Bölüm numarasını artır */
   incrementLevel() {
     this.level += 1;
   }
 
-  /** Yeni bir oyun koşusu başlat (can/skor/combo sıfırla, bölüm 1) */
   resetRun() {
     this.lives = START_LIVES;
     this.score = 0;
@@ -306,10 +463,11 @@ export class SnakeEngine {
     this.level = 1;
   }
 
-  /** Aynı bölümü (kelime + yerleşim olmadan) tekrar yükle — yeniden deneme */
   retryLevel() {
     if (this.lives <= 0) return;
-    this.loadLevel(this.level, this.loadedWord, this.tierName, this.stepMs, this.loadedTricky);
+    if (this.loadedOpts) {
+      this.loadLevel(this.loadedOpts);
+    }
   }
 
   resetAll() {
@@ -319,6 +477,10 @@ export class SnakeEngine {
     this.maxCombo = 0;
     this.level = 1;
     this.status = "menu";
+    this.obstacles = [];
+    this.bonusLetters = [];
+    this.timeLimitMs = 0;
+    this.timeRemainingMs = 0;
   }
 
   getSnapshot(): GameSnapshot {
@@ -332,8 +494,12 @@ export class SnakeEngine {
       targetWord: this.targetWord,
       currentLetterIndex: this.currentLetterIndex,
       letters: this.letters.map((l) => ({ ...l })),
+      obstacles: this.obstacles.map((o) => ({ ...o })),
+      bonusLetters: this.bonusLetters.map((b) => ({ ...b })),
       tierName: this.tierName,
       stepMs: this.stepMs,
+      timeLimitMs: this.timeLimitMs,
+      timeRemainingMs: this.timeRemainingMs,
       snake: this.snake.map((s) => ({ ...s })),
       direction: this.direction,
       lastEvent: this.lastEvent,
@@ -341,7 +507,6 @@ export class SnakeEngine {
   }
 }
 
-// Yardımcı: in-place karıştırma
 function shuffleInPlace<T>(arr: T[]): void {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

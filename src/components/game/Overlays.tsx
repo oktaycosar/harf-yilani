@@ -6,9 +6,10 @@
 // ============================================================================
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Gamepad2, RotateCcw, Play, ChevronRight, HeartCrack, CheckCircle2, AlertTriangle, Pause, Trophy } from "lucide-react";
+import { Gamepad2, RotateCcw, Play, ChevronRight, HeartCrack, CheckCircle2, AlertTriangle, Pause, Trophy, Timer } from "lucide-react";
 import type { GameSnapshot } from "@/lib/game/types";
 import type { GameStats } from "@/lib/game/storage";
+import { CATEGORIES, type Category } from "@/lib/game/wordDatabase";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,8 @@ interface Props {
   nextTargetChar: string | null;
   stats?: GameStats;
   isNewBest?: boolean;
+  category: Category;
+  onSetCategory: (c: Category) => void;
   onStart: () => void;
   onRetry: () => void;
   onContinue: () => void;
@@ -32,7 +35,9 @@ export function Overlays(props: Props) {
       {status === "menu" && <MenuOverlay key="menu" {...props} />}
       {status === "game_over" && <GameOverOverlay key="go" {...props} />}
       {status === "level_complete" && <LevelCompleteOverlay key="lc" {...props} />}
-      {status === "wrong_letter" && snapshot.lives > 0 && <WrongLetterOverlay key="wl" {...props} />}
+      {(status === "wrong_letter" || status === "time_up") && snapshot.lives > 0 && (
+        <WrongLetterOverlay key="wl" {...props} />
+      )}
       {status === "paused" && <PauseOverlay key="pa" {...props} />}
     </AnimatePresence>
   );
@@ -70,7 +75,7 @@ function Shell({ children, tone = "slate" }: { children: React.ReactNode; tone?:
   );
 }
 
-function MenuOverlay({ onStart, stats }: Props) {
+function MenuOverlay({ onStart, stats, category, onSetCategory }: Props) {
   return (
     <Shell>
       <div className="text-center">
@@ -98,6 +103,29 @@ function MenuOverlay({ onStart, stats }: Props) {
           </div>
         )}
 
+        {/* Kategori seçimi */}
+        <div className="mt-5 text-left">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">Kelime Kategorisi</p>
+          <div className="grid grid-cols-5 gap-1.5">
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => onSetCategory(cat.id)}
+                className={cn(
+                  "flex flex-col items-center gap-1 rounded-lg border p-2 transition-all",
+                  category === cat.id
+                    ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                    : "border-slate-700/50 bg-slate-800/40 text-slate-400 hover:border-slate-600 hover:bg-slate-700/40"
+                )}
+              >
+                <span className="text-lg leading-none">{cat.icon}</span>
+                <span className="text-[9px] font-semibold leading-tight">{cat.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="mt-5 rounded-lg border border-slate-700/50 bg-slate-800/40 p-4 text-left text-xs text-slate-300">
           <p className="mb-2 font-semibold text-slate-200">Nasıl Oynanır?</p>
           <ul className="space-y-1.5">
@@ -105,7 +133,9 @@ function MenuOverlay({ onStart, stats }: Props) {
             <li>• Üstteki hedef kelimenin <b className="text-amber-300">sıradaki harfi</b> altın renkte parlar.</li>
             <li>• Sıradan farklı bir harfe çarparsan <b className="text-rose-300">can kaybedersin</b>.</li>
             <li>• Aynı harften birden fazla varsa <b className="text-amber-300">sırayı</b> takip et!</li>
-            <li>• Duvara veya kendine çarpma.</li>
+            <li>• <b className="text-purple-300">Mor yıldızlar</b> bonus harf — ekstra puan!</li>
+            <li>• <b className="text-rose-300">Engellere</b> çarpma, duvar/kendine çarpma.</li>
+            <li>• Bölüm 16+ :dolu saatin altında kalan <b className="text-amber-300">süre</b> de var!</li>
             <li>• Arka arkaya doğru harflerle <b className="text-amber-300">combo</b> kazan!</li>
           </ul>
         </div>
@@ -189,23 +219,30 @@ function WrongLetterOverlay({ snapshot, onRetry }: Props) {
   const got = ev.kind === "ate_wrong" ? ev.char : "?";
   const isWall = ev.kind === "wall_collision";
   const isSelf = ev.kind === "self_collision";
+  const isObstacle = ev.kind === "obstacle_collision";
+  const isTimeUp = ev.kind === "time_up" || snapshot.status === "time_up";
+  const title = isTimeUp ? "Süre Doldu!" : isObstacle ? "Engene Çarptın!" : isWall ? "Duvara Çarptın!" : isSelf ? "Kendine Çarptın!" : "Yanlış Harf!";
+  const Icon = isTimeUp ? Timer : AlertTriangle;
   return (
     <Shell tone="amber">
       <div className="text-center">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/20">
-          <AlertTriangle className="h-7 w-7 text-amber-400" />
+          <Icon className="h-7 w-7 text-amber-400" />
         </div>
-        <h2 className="text-xl font-extrabold text-white">
-          {isWall ? "Duvara Çarptın!" : isSelf ? "Kendine Çarptın!" : "Yanlış Harf!"}
-        </h2>
-        {!isWall && !isSelf && (
+        <h2 className="text-xl font-extrabold text-white">{title}</h2>
+        {!isWall && !isSelf && !isObstacle && !isTimeUp && (
           <p className="mt-1 text-sm text-slate-300">
             <span className="font-bold text-rose-400">{got}</span> yerine{" "}
             <span className="font-bold text-emerald-400">{expected}</span> harfi gerekliydi.
           </p>
         )}
+        {isTimeUp && (
+          <p className="mt-1 text-sm text-slate-300">
+            Süre dolmadan kelimeyi tamamlayamadın.
+          </p>
+        )}
         <p className="mt-2 text-xs text-slate-400">Bir can kaybettin. Kalan can: {snapshot.lives}</p>
-        <Button onClick={onRetry} size="lg" className="mt-5 w-full bg-amber-500 text-white hover:bg-amber-600">
+        <Button onClick={onRetry} size="lg" className="mt-5 w-full bg-amber-500 text-white transition-transform hover:bg-amber-600 hover:scale-[1.02] active:scale-[0.98]">
           <RotateCcw className="mr-2 h-4 w-4" /> Tekrar Dene
         </Button>
         <p className="mt-1.5 text-[11px] text-slate-500">Otomatik yeniden başlatılıyor…</p>

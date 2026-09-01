@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, X, Trophy } from "lucide-react";
+import { Sparkles, X, Trophy, Star } from "lucide-react";
 import type { GameSnapshot } from "@/lib/game/types";
 
 interface Props {
@@ -16,13 +16,13 @@ export function FloatingFeedback({ snapshot }: Props) {
   const ev = snapshot.lastEvent;
   const show =
     snapshot.status === "playing" &&
-    (ev.kind === "ate_correct" || ev.kind === "ate_wrong");
+    (ev.kind === "ate_correct" || ev.kind === "ate_wrong" || ev.kind === "ate_bonus");
 
   let content: React.ReactNode = null;
   let key = "none";
 
   if (ev.kind === "ate_correct") {
-    key = `ok-${ev.index}`;
+    key = `ok-${ev.index}-${ev.gained}`;
     content = (
       <div className="flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/20 px-4 py-2 text-emerald-200 shadow-lg">
         <Sparkles className="h-4 w-4" />
@@ -32,6 +32,14 @@ export function FloatingFeedback({ snapshot }: Props) {
             COMBO ×{ev.combo}
           </span>
         )}
+      </div>
+    );
+  } else if (ev.kind === "ate_bonus") {
+    key = `bonus-${ev.char}-${ev.gained}`;
+    content = (
+      <div className="flex items-center gap-2 rounded-full border border-purple-400/40 bg-purple-500/25 px-4 py-2 text-purple-100 shadow-lg">
+        <Star className="h-4 w-4 fill-purple-200" />
+        <span className="font-bold">BONUS! +{ev.gained}</span>
       </div>
     );
   } else if (ev.kind === "ate_wrong") {

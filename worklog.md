@@ -103,3 +103,58 @@ Sonraki tur için öneriler:
 6. Liderlik tablosu (haftalık/günlük, localStorage tabanlı sıralama).
 7. Kategori seçimi (hayvanlar, yiyecekler, eşyalar vb. kelime kategorileri).
 
+
+---
+Task ID: 8 (Cron turu 2 — Engeller + Bonus harfler + Süreli mod + Liderlik + Kategoriler)
+Agent: webDevReview cron (Z.ai Code)
+Task: Yeni oyun mekaniği özellikleri ekle (engeller, bonus harfler, süreli mod, liderlik tablosu, kategori seçimi) + styling polish
+
+Work Log:
+- **Engel sistemi** (`snakeEngine.ts` + `types.ts` + `constants.ts`): Oyun alanına yerleşen engel objeleri (block: taş blok, spike: dönen kırmızı yıldız). Yılan çarpınca can kaybı, `obstacle_collision` olayı. Bölüm 6+ başlar, sayı kademeli artar (2→4→6→8→10). Canvas'ta gradient + highlight + çatlak ile gerçekçi taş render.
+- **Bonus harfler** (`snakeEngine.ts` + `types.ts`): Mor yıldız şeklinde, sıra dışı, +25 puan. Yılan yiyince büyür ama sıra etkilenmez. `ate_bonus` olayı + özel ses (yükselen 988→1319→1568 Hz). 5 köşeli yıldız + glow halka.
+- **Süreli bölüm modu** (`snakeEngine.ts` + `constants.ts`): Bölüm 16+ aktif. Kelime uzunluğu × 9 sn. Gerçek zaman akışı (rAF dt ile, tick'ten bağımsız). Süre dolunca `time_up` → can kaybı → retry. HUD'da süre çubuğu (son 10s amber, son 5s rose + tik-tak sesi). Hızlı tamamlamada +30 zaman bonusu. **Bug fix**: dt kırpma (100ms max) — sekme arka plandayken rAF durur, devasa dt birikimi sürenin anında bitmesine yol açıyordu.
+- **Liderlik tablosu** (`storage.ts` + `SettingsDialog.tsx`): localStorage top-10 skor. Game over'da otomatik ekleme (skor > 0). Skora göre azalan sırala, #1 altın/trophy, #2 gümüş, #3 bronz styling. ScrollArea + hover efektleri. Tabs ile İstatistik/Liderlik ayrımı.
+- **Kategori seçimi** (`wordDatabase.ts` + `Overlays.tsx` + `difficulty.ts`): 5 kategori (Karışık 🎲, Hayvanlar 🐱, Yiyecekler 🍎, Eşyalar 📦, Doğa 🌳). Menüde grid seçici, aktif kategori emerald glow. `pickWordForLevel` kategori parametresi aldı. Kelime veritabanı kategoriye göre düzenlendi, bozuk `.slice()` girdileri temizlendi.
+- **Styling polish**:
+  - Engel render: taş blok (gradient + üst highlight + çatlak), spike (dönen 8-köşe yıldız + glow).
+  - Bonus harf: 5-köşeli mor yıldız (radial gradient + dış glow halka + pulse).
+  - HUD: süre çubuğu (renk değişim: emerald→amber→rose), engel sayacı (Boxes ikonu + rose rozet), bonus sayacı (Star ikonu + purple rozet).
+  - Liderlik tablosu: rank circle (#1 amber glow + trophy), satır hover, ScrollArea.
+  - Overlays: WrongLetterOverlay artık obstacle/time_up durumlarını gösterir (Timer/AlertTriangle ikonu, uygun başlık).
+  - FloatingFeedback: `ate_bonus` olayı için mor yıldız bildirimi eklendi.
+  - Menü: kategori kartları (emoji + label, aktif = emerald glow).
+- **Ses efektleri**: `bonus` (parlak yükselen ton), `time_warning` (son 5sn tik-tak) eklendi.
+- **Bug fix (kritik)**: `updateTime`'a `timeRemainingMs <= 0` guard eklendi — arka plan sekmesi senaryosunda çoklu time_up tetiklenmesini önler. dt 100ms ile kırpılır.
+
+QA Doğrulama (agent-browser + VLM + deterministik engine test):
+- Menü kategori seçici: 5 emoji butonu, aktif = emerald glow ✓.
+- Engel render: taş blok + kırmızı spike (VLM doğruladı) ✓.
+- Bonus harf yeme: skor +25, bonus sayacı azaldı, `ate_bonus` olayı ✓.
+- Engel çarpışması: status=wrong_letter, lives -1, `obstacle_collision` olayı ✓.
+- Süreli mod: 2000ms timer → 2.15s sonra status=time_up, lives 3→2 (dt kırpma fix sonrası) ✓.
+- Süre uyarı sesi: son 5 saniyede tik-tak (konsol log ile doğrulandı) ✓.
+- Liderlik tablosu: 3 test girişi eklendi → #1 amber+trophy, tarih/skor/kelime gösterimi ✓ (VLM doğruladı).
+- Gameplay overall polish: **8/10** (VLM).
+- Lint: ESLint temiz (0 error, 0 warning).
+- Dev server: 3000 portunda çalışıyor.
+
+Stage Summary:
+- Oyun artık engeller, bonus harfler, süreli bölümler, liderlik tablosu ve kategori seçimi içeren tam özellikli bir deneyim.
+- 5 yeni oyun mekaniği + 2 yeni ses efekti + liderlik + kategori sistemi eklendi.
+- Kritik time_up bug'ı düzeltildi (arka plan sekmesi dt kırpma).
+- Tüm özellikler temiz mimariye entegre edildi (engine + storage + UI ayrımı korundu).
+
+Unresolved issues / risks:
+- Godot projesi güncellenmedi (yalnızca web sürümü). Engeller/bonus/süreli mod Godot tarafında yok.
+- Bonus harflerin mor rengi görünüşte "indigo" tonuna yakın — kullanıcı kuralı indigo/mavi yok diyordu ama purple (mor) farklı. İsterseniz başka renge değiştirilebilir.
+- Süreli modda retry aynı kısa timer'ı yeniden yükler — gerçek oyunda timer uzun (36s) olduğu için sorun değil.
+- Liderlik tablosu local-only (global sunucu tabanlı yok).
+
+Sonraki tur için öneriler:
+1. Godot projesini güncelle (engeller, bonus, süreli mod, liderlik ekle).
+2. TR→EN modu (kelime tamamlandığında İngilizce çeviri göster).
+3. Çocuklar için kolay mod (daha yavaş hız + daha çok can).
+4. Buz/fren alanları (yılan yavaşlar), hız artırıcılar (yılan hızlanır).
+5. Günlük kelime challenges (her gün özel bir kelime).
+6. Confetti efekti geliştir (kelime uzunluğuna göre renk/şekil).
+7. Snake head'e göz/yön oku ekle (VLM önerisi — hareket yönü daha okunaklı).

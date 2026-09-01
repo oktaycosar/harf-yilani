@@ -13,7 +13,9 @@ export type SfxName =
   | "game_over"
   | "level_up"
   | "menu_click"
-  | "start";
+  | "start"
+  | "bonus"
+  | "time_warning";
 
 class SoundManagerImpl {
   private ctx: AudioContext | null = null;
@@ -85,6 +87,17 @@ class SoundManagerImpl {
       case "start":
         this.tone(now, 523, 0.08, "triangle", 0.4);
         this.tone(now + 0.08, 784, 0.14, "triangle", 0.45);
+        break;
+      case "bonus":
+        // Parlak yükselen ikili ton (bonus yakalandı)
+        this.tone(now, 988, 0.06, "sine", 0.4);
+        this.tone(now + 0.05, 1319, 0.1, "sine", 0.45);
+        this.tone(now + 0.13, 1568, 0.12, "sine", 0.4);
+        break;
+      case "time_warning":
+        // Kısa tik-tak uyarısı (son 5 saniye)
+        this.tone(now, 880, 0.04, "square", 0.25);
+        this.tone(now + 0.12, 880, 0.04, "square", 0.25);
         break;
     }
   }

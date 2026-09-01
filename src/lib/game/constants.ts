@@ -66,3 +66,45 @@ export const DIFFICULTY_TIERS: DifficultyTier[] = [
 
 /** Türkçe alfabesi (29 harf) — büyük harf, düzgün sıralama */
 export const TURKISH_ALPHABET = "ABCÇDEFGĞHIİJKLMNOÖPRSŞTUÜVYZ" as const;
+
+// ----------------------------------------------------------------------------
+// ENGEL SİSTEMİ
+// ----------------------------------------------------------------------------
+/** Engellerin başladığı bölüm (öncesi engelsiz) */
+export const OBSTACLES_START_LEVEL = 6;
+
+/** Engel sayısını bölüme göre hesapla (üst sınır uygulanır) */
+export function getObstacleCount(level: number): number {
+  if (level < OBSTACLES_START_LEVEL) return 0;
+  // 6-15: 2, 16-25: 4, 26-35: 6, 36-45: 8, 46+: 10
+  const tier = level < 16 ? 2 : level < 26 ? 4 : level < 36 ? 6 : level < 46 ? 8 : 10;
+  return tier;
+}
+
+/** Engel üst sınırı (oyun alanını tıkamamak için) */
+export const OBSTACLES_MAX = 12;
+
+// ----------------------------------------------------------------------------
+// BONUS HARF SİSTEMİ
+// ----------------------------------------------------------------------------
+/** Bonus harf sayısı (bölüm başına) */
+export const BONUS_LETTER_COUNT = 2;
+
+/** Bonus harf puan değeri */
+export const BONUS_LETTER_VALUE = 25;
+
+// ----------------------------------------------------------------------------
+// SÜRELİ BÖLÜM MODU
+// ----------------------------------------------------------------------------
+/** Süreli modun başladığı bölüm */
+export const TIMED_MODE_START_LEVEL = 16;
+
+/** Kelime uzunluğu başına süre (ms). Örn. 4 harfli kelimede 4 * 8 sn = 32 sn. */
+export const TIME_PER_LETTER_MS = 9000;
+
+/** Süre dolduğunda ekstra can eşiği (kal süre > %50 ise bölüm tamamlanınca +0, yoksa uyarı) */
+export const TIME_BONUS_THRESHOLD = 0.5;
+
+/** Kalan süre yüzdesi > eşiği geçerse ekstra puan */
+export const TIME_BONUS_POINTS = 30;
+

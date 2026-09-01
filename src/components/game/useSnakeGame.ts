@@ -16,6 +16,7 @@ import {
   WRONG_LETTER_DELAY,
 } from "@/lib/game/constants";
 import type { GameSnapshot } from "@/lib/game/types";
+import type { Category } from "@/lib/game/wordDatabase";
 import { SoundManager, type SfxName } from "@/lib/game/sound";
 import {
   loadStats,
@@ -23,7 +24,10 @@ import {
   resetStats,
   saveStats,
   setSoundEnabled as persistSound,
+  loadLeaderboard,
+  addToLeaderboard,
   type GameStats,
+  type LeaderboardEntry,
 } from "@/lib/game/storage";
 
 export interface UseSnakeGameApi {
@@ -45,6 +49,11 @@ export interface UseSnakeGameApi {
   resetAllStats: () => void;
   /** Kelime tamamlama konfeti tetikleyici (her tamamlamada değişir) */
   confettiTrigger: number;
+  /** Aktif kelime kategorisi */
+  category: Category;
+  setCategory: (c: Category) => void;
+  /** Liderlik tablosu (top 10) */
+  leaderboard: LeaderboardEntry[];
 }
 
 export function useSnakeGame(): UseSnakeGameApi {
@@ -53,6 +62,8 @@ export function useSnakeGame(): UseSnakeGameApi {
   const [stats, setStats] = useState<GameStats>(() => loadStats());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => loadStats().soundEnabled);
   const [confettiTrigger, setConfettiTrigger] = useState<number>(0);
+  const [category, setCategory] = useState<Category>("karisik");
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(() => loadLeaderboard());
 
   const recentWordsRef = useRef<string[]>([]);
   const rafRef = useRef<number | null>(null);
@@ -60,15 +71,20 @@ export function useSnakeGame(): UseSnakeGameApi {
   const accRef = useRef<number>(0);
   const lastSigRef = useRef<string>("");
   const lastEventSigRef = useRef<string>("");
+  const lastWarningSecRef = useRef<number>(-1);
   const wordsCompletedThisRunRef = useRef<number>(0);
   const statsRef = useRef<GameStats>(stats);
   const soundEnabledRef = useRef<boolean>(soundEnabled);
+  const categoryRef = useRef<Category>(category);
   useEffect(() => {
     statsRef.current = stats;
   }, [stats]);
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
+  useEffect(() => {
+    categoryRef.current = category;
+  }, [category]);
 
   // İlk yüklemede SoundManager'ı senkronize et
   useEffect(() => {
@@ -88,9 +104,18 @@ export function useSnakeGame(): UseSnakeGameApi {
   const loadLevel = useCallback(
     (level: number, isAdvancement: boolean = false) => {
       const diff = getDifficultyForLevel(level);
-      const { word } = pickWordForLevel(level, recentWordsRef.current);
+      const { word } = pickWordForLevel(level, recentWordsRef.current, categoryRef.current);
       recentWordsRef.current = [...recentWordsRef.current.slice(-6), word];
-      engine.loadLevel(level, word, diff.tier.name, diff.stepMs, diff.tier.tricky);
+      engine.loadLevel({
+        level,
+        word,
+        tierName: diff.tier.name,
+        stepMs: diff.stepMs,
+        tricky: diff.tier.tricky,
+        obstacleCount: diff.obstacleCount,
+        timed: diff.timed,
+        timeLimitMs: diff.timeLimitMs,
+      });
       lastStepRef.current = performance.now();
       accRef.current = 0;
       if (isAdvancement && level > 1) playSfx("level_up");
@@ -103,19 +128,41 @@ export function useSnakeGame(): UseSnakeGameApi {
   useEffect(() => {
     const loop = (now: number) => {
       if (engine.status === "playing") {
-        const dt = now - lastStepRef.current;
+        const rawDt = now - lastStepRef.current;
         lastStepRef.current = now;
-        accRef.current += dt;
-        while (accRef.current >= engine.stepMs) {
-          accRef.current -= engine.stepMs;
-          engine.tick();
-          if (engine.status !== "playing") break;
+        // dt'yi kırp: sekme arka plandayken rAF durur, geri gelince devasa dt
+        // birikir. Bu, sürenin anında bitmesine ve çoklu time_up olaylarına
+        // yol açar. 100ms ile sınırla (en fazla ~6 adım atlar).
+        const dt = Math.min(rawDt, 100);
+        // Süreli mod: gerçek zaman akışı (tick bağımsız)
+        if (engine.timeLimitMs > 0) {
+          engine.updateTime(dt);
+        }
+        // Hareket tick'leri
+        if (engine.status === "playing") {
+          accRef.current += dt;
+          while (accRef.current >= engine.stepMs) {
+            accRef.current -= engine.stepMs;
+            engine.tick();
+            if (engine.status !== "playing") break;
+          }
         }
       }
       const s = engine.getSnapshot();
       const ev = s.lastEvent;
-      const evSig = `${ev.kind}|${"index" in ev ? ev.index : ""}|${"char" in ev ? ev.char : ""}|${"combo" in ev ? ev.combo : ""}`;
-      const sig = `${s.status}|${s.score}|${s.lives}|${s.combo}|${s.level}|${s.currentLetterIndex}|${s.snake.length}|${s.snake[0]?.x ?? -1}|${s.snake[0]?.y ?? -1}|${evSig}`;
+      const evSig = `${ev.kind}|${"index" in ev ? ev.index : ""}|${"char" in ev ? ev.char : ""}|${"combo" in ev ? ev.combo : ""}|${"gained" in ev ? ev.gained : ""}`;
+      const sig = `${s.status}|${s.score}|${s.lives}|${s.combo}|${s.level}|${s.currentLetterIndex}|${s.snake.length}|${s.snake[0]?.x ?? -1}|${s.snake[0]?.y ?? -1}|${Math.floor(s.timeRemainingMs / 100)}|${evSig}`;
+
+      // Süre uyarısı: son 5 saniyede her saniye tik-tak
+      if (s.timeLimitMs > 0 && s.timeRemainingMs > 0 && s.timeRemainingMs <= 5000) {
+        const secLeft = Math.ceil(s.timeRemainingMs / 1000);
+        if (secLeft !== lastWarningSecRef.current && secLeft >= 1) {
+          lastWarningSecRef.current = secLeft;
+          if (soundEnabledRef.current) SoundManager.play("time_warning");
+        }
+      } else {
+        lastWarningSecRef.current = -1;
+      }
 
       // Yeni olay tespit edildi → ses çal
       if (evSig !== lastEventSigRef.current && ev.kind !== "none") {
@@ -127,12 +174,13 @@ export function useSnakeGame(): UseSnakeGameApi {
           case "ate_wrong":
             playSfx("wrong");
             break;
+          case "ate_bonus":
+            playSfx("bonus");
+            break;
           case "word_complete":
             playSfx("word_complete");
             wordsCompletedThisRunRef.current += 1;
             setConfettiTrigger((c) => c + 1);
-            // İlerlemeyi anlık kaydet (oyuncu oyundan çıksa bile rekoru korunur).
-            // Not: s.score bu noktada +50 kelime bonusunu zaten içerir (tick içinde eklendi).
             {
               const cur = statsRef.current;
               const next: GameStats = {
@@ -154,12 +202,14 @@ export function useSnakeGame(): UseSnakeGameApi {
             break;
           case "self_collision":
           case "wall_collision":
+          case "obstacle_collision":
+          case "time_up":
             playSfx("wrong");
             break;
         }
       }
 
-      // Game over'a ilk geçişte istatistik kaydet + ses
+      // Game over'a ilk geçişte istatistik kaydet + ses + liderlik tablosu
       if (s.status === "game_over" && lastSigRef.current.split("|")[0] !== "game_over") {
         playSfx("game_over");
         const updated = recordGameEnd(statsRef.current, {
@@ -168,6 +218,17 @@ export function useSnakeGame(): UseSnakeGameApi {
           wordsCompleted: wordsCompletedThisRunRef.current,
         });
         setStats(updated);
+        // Liderlik tablosuna ekle (yalnızca skor > 0 ise)
+        if (s.score > 0) {
+          const entry: LeaderboardEntry = {
+            score: s.score,
+            level: s.level,
+            date: Date.now(),
+            word: s.targetWord,
+          };
+          const newBoard = addToLeaderboard(entry);
+          setLeaderboard(newBoard);
+        }
       }
 
       if (sig !== lastSigRef.current) {
@@ -191,7 +252,10 @@ export function useSnakeGame(): UseSnakeGameApi {
       }, LEVEL_COMPLETE_DELAY);
       return () => clearTimeout(t);
     }
-    if (snapshot.status === "wrong_letter" && snapshot.lives > 0) {
+    if (
+      (snapshot.status === "wrong_letter" || snapshot.status === "time_up") &&
+      snapshot.lives > 0
+    ) {
       const t = setTimeout(() => {
         engine.retryLevel();
         publish();
@@ -261,6 +325,7 @@ export function useSnakeGame(): UseSnakeGameApi {
     setStats(cleared);
     setSoundEnabled(cleared.soundEnabled);
     SoundManager.setEnabled(cleared.soundEnabled);
+    setLeaderboard([]);
   }, []);
 
   // Ref tabanlı aksiyonlar (klavye handler'ı stale closure yaşamaz)
@@ -347,5 +412,8 @@ export function useSnakeGame(): UseSnakeGameApi {
     toggleSound,
     resetAllStats,
     confettiTrigger,
+    category,
+    setCategory,
+    leaderboard,
   };
 }
