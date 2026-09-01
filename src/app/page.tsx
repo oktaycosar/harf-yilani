@@ -145,6 +145,7 @@ export default function Home() {
               leaderboard={game.leaderboard}
               achievements={game.achievements}
               categoryProgress={game.categoryProgress}
+              weeklyStats={game.weeklyStats}
               soundVolume={game.soundVolume}
               ttsVolume={game.ttsVolume}
               onToggleSound={(v) => {
@@ -171,7 +172,7 @@ export default function Home() {
               "border-slate-800/60 bg-slate-950 shadow-emerald-950/30"
             )}
           >
-            <GameCanvas snapshot={snapshot} nextTargetChar={nextTargetChar} />
+            <GameCanvas snapshot={snapshot} nextTargetChar={nextTargetChar} skin={game.skin} />
             <FloatingFeedback snapshot={snapshot} />
             <ConfettiBurst trigger={game.confettiTrigger} wordLength={snapshot.targetWord.length || 3} />
             <ComboFlash combo={snapshot.combo} status={snapshot.status} />
@@ -198,6 +199,8 @@ export default function Home() {
               onSpeakWord={(word) => {
                 import("@/lib/game/tts").then(({ TTSManager }) => TTSManager.speak(word));
               }}
+              skin={game.skin}
+              onSetSkin={game.setSkin}
             />
           </div>
 

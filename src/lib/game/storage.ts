@@ -9,6 +9,7 @@ const KEY = "harf-yilani-stats-v1";
 const LEADERBOARD_KEY = "harf-yilani-leaderboard-v1";
 const ACHIEVEMENTS_KEY = "harf-yilani-achievements-v1";
 const CATEGORY_PROGRESS_KEY = "harf-yilani-category-progress-v1";
+const WEEKLY_STATS_KEY = "harf-yilani-weekly-stats-v1";
 const LEADERBOARD_MAX = 10;
 
 export interface GameStats {
@@ -93,11 +94,13 @@ export function recordGameEnd(
 
 export function resetStats(): GameStats {
   saveStats({ ...DEFAULT_STATS });
-  // Liderlik tablosunu, achievement'ları ve kategori ilerlemesini de sıfırla
+  // Liderlik tablosunu, achievement'ları, kategori ilerlemesini ve haftalık
+  // istatistikleri de sıfırla
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(LEADERBOARD_KEY);
     window.localStorage.removeItem(ACHIEVEMENTS_KEY);
     window.localStorage.removeItem(CATEGORY_PROGRESS_KEY);
+    window.localStorage.removeItem(WEEKLY_STATS_KEY);
   }
   return { ...DEFAULT_STATS };
 }
@@ -295,4 +298,83 @@ export function incrementCategoryProgress(category: string): CategoryProgress {
     }
   }
   return current;
+}
+
+// ---------------------------------------------------------------------------
+// Haftalık istatistik — son 7 günün oyun sayısı + en iyi skoru
+// ---------------------------------------------------------------------------
+
+export interface WeeklyStatEntry {
+  /** YYYY-MM-DD formatında tarih (yerel) */
+  date: string;
+  /** O gün oynanan oyun sayısı */
+  gamesPlayed: number;
+  /** O günki en iyi skor */
+  score: number;
+}
+
+/** Bugünün YYYY-MM-DD formatındaki tarih string'i (yerel saat). */
+function todayStr(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Son 7 günün (bugün dahil) haftalık istatistik dizisi. Eksik günler 0 olarak döner. */
+export function loadWeeklyStats(): WeeklyStatEntry[] {
+  const stored = readWeeklyMap();
+  const out: WeeklyStatEntry[] = [];
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    const key = todayStr(d);
+    const entry = stored[key];
+    out.push({
+      date: key,
+      gamesPlayed: entry?.gamesPlayed ?? 0,
+      score: entry?.score ?? 0,
+    });
+  }
+  return out;
+}
+
+/** Bir oyun bittiğinde çağrılır — bugüne oyun sayısı + en iyi skoru kaydeder. */
+export function recordGamePlay(score: number): WeeklyStatEntry[] {
+  const stored = readWeeklyMap();
+  const key = todayStr();
+  const cur = stored[key] ?? { gamesPlayed: 0, score: 0 };
+  stored[key] = {
+    gamesPlayed: cur.gamesPlayed + 1,
+    score: Math.max(cur.score, score),
+  };
+  // 30 günden eski kayıları temizle (performans için)
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  const cutoffKey = todayStr(cutoff);
+  for (const k of Object.keys(stored)) {
+    if (k < cutoffKey) delete stored[k];
+  }
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(WEEKLY_STATS_KEY, JSON.stringify(stored));
+    } catch {
+      // yoksay
+    }
+  }
+  return loadWeeklyStats();
+}
+
+function readWeeklyMap(): Record<string, { gamesPlayed: number; score: number }> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(WEEKLY_STATS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return {};
+    return parsed as Record<string, { gamesPlayed: number; score: number }>;
+  } catch {
+    return {};
+  }
 }

@@ -389,3 +389,65 @@ Sonraki tur için öneriler:
 6. Kategori hedefini dinamik yap (kelime havuzuna göre).
 7. no_death_run mantığını gerçek "üst üste hata yok" yap.
 8. Pause menüsüne "Menüye Dön" butonu ekle.
+
+---
+Task ID: 13 (Cron turu 7 — Skin sistemi + Pause Menü + Achievement Detay + Haftalık Stats)
+Agent: webDevReview cron (Z.ai Code)
+Task: Yılan skin seçim sistemi (5 skin), pause menü "Menüye Dön" butonu, achievement detay görünümü (tıklanınca modal), haftalık istatistik özeti (bar chart)
+
+Work Log:
+- **Yılan skin seçim sistemi** (`src/lib/game/snakeSkins.ts` + `useSnakeGame.ts` + `GameCanvas.tsx` + `Overlays.tsx` + `page.tsx`):
+  - 5 skin: `emerald` (Zümrüt 🐍), `amber` (Ateş 🔥), `sky` (Buz ❄️), `rose` (Gül 🌹), `purple` (Mor 🔮). Her skin: id, name, emoji, headColor, tailColor, boostHead, boostTail, iceHead, iceTail, pupilColor.
+  - Fonksiyonlar: `loadSkin()`, `saveSkin(id)`, `getSkinById(id)`, `SNAKE_SKINS` array. localStorage anahtarı: `harf-yilani-skin-v1`.
+  - `useSnakeGame.ts`: `skin` state (default loadSkin), `setSkin(id)` callback (localStorage'a kaydeder). API interface'e + return'e eklendi.
+  - `GameCanvas.tsx`: `skin?: SnakeSkin` prop eklendi. `skinRef` ile render döngüsü güncel skin'i görür (useEffect ile senkronize — React 19 refs-during-render kuralına uyum). `drawSnake` hardcoded emerald/amber/sky renkleri yerine `skin.headColor/tailColor/boostHead/boostTail/iceHead/iceTail/pupilColor` kullanır.
+  - `Overlays.tsx` MenuOverlay: "Yılan Skin" bölümü eklendi — 5 skin kartı grid (emoji + isim + 2 renk önizleme noktası). Aktif skin emerald glow + border ile vurgulanır. `skin` ve `onSetSkin` Props'a eklendi.
+  - VLM doğruladı: "5 skin kartı (🐍 Zümrüt, 🔥 Ateş, ❄️ Buz, 🌹 Gül, 🔮 Mor), her kartta emoji + isim + renk önizleme noktaları, Zümrüt emerald glow ile vurgulu" ✓.
+  - VLM doğruladı: Ateş skin'de "yılanın başı amber/turuncu" ✓, Gül skin'de "yılanın başı pembe (rose) tonlu" ✓.
+  - localStorage: `harf-yilani-skin-v1: "amber"` ✓ (skin kalıcı).
+- **Pause menü "Menüye Dön" butonu** (`Overlays.tsx` PauseOverlay):
+  - "Devam Et" butonunun altına ghost variant "Menüye Dön" butonu eklendi (rose/slate renkleri, border-rose-900/40, hover:bg-rose-900/30). `onBackToMenu` prop'unu çağırır.
+  - VLM doğruladı: "Devam Et butonu ✓, Menüye Dön butonu ✓ (Kırmızı-rose tonlu, emerald değil), 2x2 istatistik grid ✓".
+- **Achievement detay görünümü** (`SettingsDialog.tsx`):
+  - `selectedAchievement` state eklendi. Achievement kartları artık `<button>` — tıklayınca `setSelectedAchievement(a)` çağırır.
+  - `AchievementDetailModal` bileşeni: büyük 4xl ikon (açık: skin rengi, kilitli: Lock ikonu grayscale), başlık, açıklama, açılma tarihi (tr-TR, gün+ay+yıl+saat:dakika) + emerald border kart (açıkssa) veya "Henüz açılmadı" + slate border (kilitliyse), "Kapat" butonu + X kapat ikonu, ESC ile kapatma, backdrop tıklayınca kapatma.
+  - VLM doğruladı: "açık ✓, büyük 🎯 ikon ✓, İlk Kelime başlık ✓, açılma tarihi (1 Eylül 2026 23:34) ✓, Kapat butonu ✓".
+- **Haftalık istatistik özeti** (`storage.ts` + `useSnakeGame.ts` + `SettingsDialog.tsx`):
+  - `storage.ts`: `WeeklyStatEntry` interface (`{ date: string; gamesPlayed: number; score: number }`). `loadWeeklyStats()` (son 7 gün, eksik günler 0), `recordGamePlay(score)` (bugüne oyun sayısı + max skor, 30 günden eski kayıtları temizle). `WEEKLY_STATS_KEY = "harf-yilani-weekly-stats-v1"`. `resetStats` haftalık stats'ı da temizler.
+  - `useSnakeGame.ts`: Game over'a ilk geçişte `recordGamePlay(s.score)` çağrılır, `weeklyStats` state güncellenir.
+  - `SettingsDialog.tsx`: 5. sekme "Haftalık" (CalendarClock ikonu) eklendi. `WeeklyTab` bileşeni: 3 özet kart (Toplam Oyun, En İyi Gün, Hafta Skoru), 7-günlük bar chart (gradient barlar — emerald normal, amber+glow bugün), gün etiketleri + gün numaraları, 0 skorlu günler minimum yükseklikle gösterilir, title tooltip, boş hafta mesajı.
+  - VLM doğruladı: "3 özet kart ✓, 7 günlük bar chart ✓, bugünün barı (Sal) amber/altın + glow ✓, diğerleri emerald yeşil ✓, gün etiketleri + gün numaraları ✓".
+  - localStorage: `harf-yilani-weekly-stats-v1: {"2026-09-01":{"gamesPlayed":3,"score":0}}` ✓ (3 game over kaydedildi).
+- **Styling polish**: Skin kartları emoji + 2 renk noktası + aktif emerald glow. Achievement detay modalı amber gradient (açık) / slate (kilitli) + büyük ikon + check badge. Haftalık bar chart emerald→emerald-400 (normal) / amber-600→amber-300 + glow (bugün). Pause "Menüye Dön" rose/slate ghost.
+
+QA Doğrulama (agent-browser + VLM):
+- Menu skin selector: 5 skin kartı + renk noktaları + Zümrüt emerald glow ✓ (VLM).
+- Ateş skin render: yılan başı amber/turuncu ✓ (VLM).
+- Gül skin render: yılan başı rose/pembe ✓ (VLM).
+- Skin persistence: localStorage `harf-yilani-skin-v1: "amber"` ✓.
+- Pause menü: "Devam Et" + "Menüye Dön" (rose) + 2x2 stats grid ✓ (VLM).
+- Achievement detay: açık, 🎯 ikon, "İlk Kelime" başlık, açılma tarihi, "Kapat" butonu ✓ (VLM).
+- Haftalık tab: 3 özet kart + 7-günlük bar chart + bugün amber glow + gün etiketleri ✓ (VLM).
+- localStorage weekly: 3 oyun kaydedildi ✓.
+- Lint: ESLint temiz (0 error, 0 warning) — React 19 refs-during-render kuralı useEffect ile çözüldü.
+- Dev server: 3000 portunda çalışıyor, GET / 200 sağlıklı.
+
+Stage Summary:
+- Oyun artık 5 yılan skin'i (her biri boost/buz/normal için ayrı renk paleti), gelişmiş pause menüsü (Menüye Dön), tıklanabilir achievement kartları + detay modalı (açılma tarihi dahil) ve haftalık istatistik bar chart sekmesi içeren tam özellikli bir deneyim.
+- Skin seçimi localStorage'a kaydedilir, sayfa yenilenince korunur.
+- Haftalık istatistik her game over'da otomatik kaydedilir (oyun sayısı + en iyi skor).
+
+Unresolved issues / risks:
+- Godot projesi güncellenmedi (yalnızca web sürümü).
+- Skin seçimi yalnızca menüden — oyun sırasında değiştirilemez (tasarım kararı).
+- Haftalık istatistik yalnızca game over'da kaydedilir — pause→Menüye Dön ile çıkarsa kaydedilmez.
+- `dailyWord` değişkeni MenuOverlay'de unused (önceden de öyle, lint geçiyor).
+
+Sonraki tur için öneriler:
+1. Godot projesini güncelle (skin sistemi, achievement detay, haftalık stats, pause menü).
+2. Skin preview'ı menüde küçük animasyonlu yılan gösterebilir.
+3. Haftalık stats'a "günün en iyi kategorisi" eklenebilir.
+4. Achievement detay modalında "paylaş" butonu eklenebilir.
+5. Skin başına ayrı achievement'lar (her skinle 10 kelime tamamla vb.).
+6. Haftalık hedef sistemi (haftada 5 oyun → bonus) eklenebilir.
+7. Boost/ice durumunda skin renkleri için preview eklenebilir (skin seçicide hover).

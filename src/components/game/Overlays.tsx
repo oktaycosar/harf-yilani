@@ -6,11 +6,12 @@
 // ============================================================================
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Gamepad2, RotateCcw, Play, ChevronRight, HeartCrack, CheckCircle2, AlertTriangle, Pause, Trophy, Timer, Zap, Snowflake, CalendarClock, Baby, Volume2 } from "lucide-react";
+import { Gamepad2, RotateCcw, Play, ChevronRight, HeartCrack, CheckCircle2, AlertTriangle, Pause, Trophy, Timer, Zap, Snowflake, CalendarClock, Baby, Volume2, Palette } from "lucide-react";
 import type { GameSnapshot } from "@/lib/game/types";
 import type { GameStats } from "@/lib/game/storage";
 import { CATEGORIES, type Category } from "@/lib/game/wordDatabase";
 import { getTranslation, getDailyWord, isDailyCompleted } from "@/lib/game/translations";
+import { SNAKE_SKINS, type SnakeSkin } from "@/lib/game/snakeSkins";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,10 @@ interface Props {
   ttsEnabled: boolean;
   onToggleTTS: () => void;
   onSpeakWord: (word: string) => void;
+  /** Aktif yılan skin'i */
+  skin: SnakeSkin;
+  /** Skin değiştir */
+  onSetSkin: (id: string) => void;
 }
 
 export function Overlays(props: Props) {
@@ -84,7 +89,7 @@ function Shell({ children, tone = "slate" }: { children: React.ReactNode; tone?:
   );
 }
 
-function MenuOverlay({ onStart, onStartDaily, stats, category, onSetCategory, showTranslation, onToggleTranslation, easyMode, onToggleEasyMode }: Props) {
+function MenuOverlay({ onStart, onStartDaily, stats, category, onSetCategory, showTranslation, onToggleTranslation, easyMode, onToggleEasyMode, skin, onSetSkin }: Props) {
   const dailyDone = isDailyCompleted();
   const dailyWord = getDailyWord();
   return (
@@ -137,6 +142,48 @@ function MenuOverlay({ onStart, onStartDaily, stats, category, onSetCategory, sh
           </div>
           {!dailyDone && <ChevronRight className="h-4 w-4 text-emerald-300" />}
         </button>
+
+        {/* Yılan skin seçimi */}
+        <div className="mt-4 text-left">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+            <Palette className="h-3 w-3" /> Yılan Skin
+          </p>
+          <div className="grid grid-cols-5 gap-1.5">
+            {SNAKE_SKINS.map((s) => {
+              const active = skin.id === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onSetSkin(s.id)}
+                  aria-label={s.name}
+                  aria-pressed={active}
+                  className={cn(
+                    "flex flex-col items-center gap-1 rounded-lg border p-2 transition-all",
+                    active
+                      ? "border-emerald-500/50 bg-emerald-500/15 shadow-[0_0_10px_rgba(16,185,129,0.35)]"
+                      : "border-slate-700/50 bg-slate-800/40 hover:border-slate-600 hover:bg-slate-700/40"
+                  )}
+                >
+                  <span className="text-lg leading-none">{s.emoji}</span>
+                  <span className="flex items-center gap-0.5">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: s.headColor }}
+                    />
+                    <span
+                      className="h-2 w-2 rounded-full opacity-70"
+                      style={{ backgroundColor: s.tailColor }}
+                    />
+                  </span>
+                  <span className={cn("text-[9px] font-semibold leading-tight", active ? "text-emerald-200" : "text-slate-400")}>
+                    {s.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* Kategori seçimi */}
         <div className="mt-4 text-left">
@@ -372,7 +419,7 @@ function WrongLetterOverlay({ snapshot, onRetry }: Props) {
   );
 }
 
-function PauseOverlay({ snapshot, onResume }: Props) {
+function PauseOverlay({ snapshot, onResume, onBackToMenu }: Props) {
   const s = snapshot;
   return (
     <Shell tone="slate">
@@ -405,6 +452,14 @@ function PauseOverlay({ snapshot, onResume }: Props) {
 
         <Button onClick={onResume} size="lg" className="mt-4 w-full bg-emerald-500 text-white hover:bg-emerald-600">
           <Play className="mr-2 h-4 w-4" /> Devam Et
+        </Button>
+        <Button
+          onClick={onBackToMenu}
+          variant="ghost"
+          size="sm"
+          className="mt-2 w-full border border-rose-900/40 text-rose-300 hover:bg-rose-900/30 hover:text-rose-200"
+        >
+          <RotateCcw className="mr-2 h-3.5 w-3.5" /> Menüye Dön
         </Button>
       </div>
     </Shell>

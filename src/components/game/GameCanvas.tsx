@@ -9,21 +9,33 @@
 import { useEffect, useRef } from "react";
 import type { GameSnapshot } from "@/lib/game/types";
 import { GRID_COLS, GRID_ROWS } from "@/lib/game/constants";
+import type { SnakeSkin } from "@/lib/game/snakeSkins";
+import { loadSkin } from "@/lib/game/snakeSkins";
 
 interface Props {
   snapshot: GameSnapshot;
   /** Bir sonraki hedef harf (highlight için) */
   nextTargetChar: string | null;
+  /** Aktif yılan skin'i (yeniden çizim rengi için) */
+  skin?: SnakeSkin;
 }
 
 // Türkçe karakterleri canvas'ta doğru render etmek için fontu şapkalı/tilkeli
 // destekleyen bir aile kullanıyoruz. Sistemde genelde mevcuttur.
 const FONT_FAMILY = "'Segoe UI', 'Noto Sans', system-ui, sans-serif";
 
-export function GameCanvas({ snapshot, nextTargetChar }: Props) {
+export function GameCanvas({ snapshot, nextTargetChar, skin }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  // Skin prop'u değişse bile render döngüsü güncel refersı görsün diye ref'te tutuyoruz.
+  // Render sırasında ref'i güncelleyemeyeceğimiz için useEffect ile senkronize ediyoruz.
+  const skinRef = useRef<SnakeSkin>(skin ?? loadSkin());
+  useEffect(() => {
+    if (skin && skin.id !== skinRef.current.id) {
+      skinRef.current = skin;
+    }
+  }, [skin]);
 
   // Yüksek DPI ve responsive boyutlandırma
   useEffect(() => {
@@ -62,7 +74,7 @@ export function GameCanvas({ snapshot, nextTargetChar }: Props) {
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext("2d");
-        if (ctx) draw(ctx, canvas, snapshot, nextTargetChar);
+        if (ctx) draw(ctx, canvas, snapshot, nextTargetChar, skinRef.current);
       }
       rafRef.current = requestAnimationFrame(render);
     };
@@ -384,7 +396,8 @@ function draw(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   s: GameSnapshot,
-  nextTargetChar: string | null
+  nextTargetChar: string | null,
+  skin: SnakeSkin
 ) {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
@@ -443,7 +456,7 @@ function draw(
   }
 
   // Yılan
-  drawSnake(ctx, s, offX, offY, cell, t);
+  drawSnake(ctx, s, offX, offY, cell, t, skin);
 
   // Hatalı harf / ölüm efekti
   if (s.status === "wrong_letter" || s.status === "game_over" || s.status === "time_up") {
@@ -811,7 +824,8 @@ function drawSnake(
   offX: number,
   offY: number,
   cell: number,
-  time: number
+  time: number,
+  skin: SnakeSkin
 ) {
   const dead = s.status === "wrong_letter" || s.status === "game_over" || s.status === "time_up";
   const celebrate = s.status === "level_complete";
@@ -850,17 +864,17 @@ function drawSnake(
       color1 = "#34d399";
       color2 = "#059669";
     } else if (boosted) {
-      // Boost: amber/altın tonları
-      color1 = lerpColor("#f59e0b", "#b45309", t);
-      color2 = lerpColor("#d97706", "#78350f", t);
+      // Boost: skin'in boost renkleri
+      color1 = lerpColor(skin.boostHead, skin.boostTail, t);
+      color2 = lerpColor(skin.boostTail, "#1c1917", t);
     } else if (onIce) {
-      // Buz üzerinde: mavi-yeşil tonları
-      color1 = lerpColor("#38bdf8", "#0c4a6e", t);
-      color2 = lerpColor("#0ea5e9", "#082f49", t);
+      // Buz üzerinde: skin'in buz renkleri
+      color1 = lerpColor(skin.iceHead, skin.iceTail, t);
+      color2 = lerpColor(skin.iceTail, "#020617", t);
     } else {
-      // Baş → kuyruk: emerald tonları
-      color1 = lerpColor("#10b981", "#022c22", t);
-      color2 = lerpColor("#047857", "#022c22", t);
+      // Baş → kuyruk: skin'in normal renkleri
+      color1 = lerpColor(skin.headColor, skin.tailColor, t);
+      color2 = lerpColor(skin.tailColor, "#020617", t * 0.7);
     }
     const grad = ctx.createRadialGradient(cx - r / 3, cy - r / 3, r / 4, cx, cy, r);
     grad.addColorStop(0, color1);
@@ -921,7 +935,7 @@ function drawSnake(
     const pupilShift = eyeR * 0.25;
     const px = (dir === "left" ? -pupilShift : dir === "right" ? pupilShift : 0);
     const py = (dir === "up" ? -pupilShift : dir === "down" ? pupilShift : 0);
-    ctx.fillStyle = dead ? "#7f1d1d" : "#0f172a";
+    ctx.fillStyle = dead ? "#7f1d1d" : skin.pupilColor;
     ctx.beginPath(); ctx.arc(ex1 + px, ey1 + py, pupilR, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(ex2 + px, ey2 + py, pupilR, 0, Math.PI * 2); ctx.fill();
     // Göz parıltısı
@@ -930,7 +944,7 @@ function drawSnake(
     ctx.beginPath(); ctx.arc(ex2 + px - pupilR * 0.3, ey2 + py - pupilR * 0.3, pupilR * 0.35, 0, Math.PI * 2); ctx.fill();
   } else {
     // Kırpma: yatay çizgi
-    ctx.strokeStyle = dead ? "#7f1d1d" : "#0f172a";
+    ctx.strokeStyle = dead ? "#7f1d1d" : skin.pupilColor;
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(ex1 - eyeR, ey1); ctx.lineTo(ex1 + eyeR, ey1); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(ex2 - eyeR, ey2); ctx.lineTo(ex2 + eyeR, ey2); ctx.stroke();

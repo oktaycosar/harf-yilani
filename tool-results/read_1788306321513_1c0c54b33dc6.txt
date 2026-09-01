@@ -1,0 +1,1003 @@
+     1→"use client";
+     2→
+     3→// ============================================================================
+     4→// GameCanvas — Oyun alanını HTML5 Canvas üzerine çizer.
+     5→// Snake + harfler + ızgara + canlandırma efektleri.
+     6→// Çizim mantığı Godot versiyonundaki draw rutinleriyle birebir uyuşur.
+     7→// ============================================================================
+     8→
+     9→import { useEffect, useRef } from "react";
+    10→import type { GameSnapshot } from "@/lib/game/types";
+    11→import { GRID_COLS, GRID_ROWS } from "@/lib/game/constants";
+    12→
+    13→interface Props {
+    14→  snapshot: GameSnapshot;
+    15→  /** Bir sonraki hedef harf (highlight için) */
+    16→  nextTargetChar: string | null;
+    17→}
+    18→
+    19→// Türkçe karakterleri canvas'ta doğru render etmek için fontu şapkalı/tilkeli
+    20→// destekleyen bir aile kullanıyoruz. Sistemde genelde mevcuttur.
+    21→const FONT_FAMILY = "'Segoe UI', 'Noto Sans', system-ui, sans-serif";
+    22→
+    23→export function GameCanvas({ snapshot, nextTargetChar }: Props) {
+    24→  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    25→  const wrapRef = useRef<HTMLDivElement | null>(null);
+    26→  const rafRef = useRef<number | null>(null);
+    27→
+    28→  // Yüksek DPI ve responsive boyutlandırma
+    29→  useEffect(() => {
+    30→    const canvas = canvasRef.current;
+    31→    const wrap = wrapRef.current;
+    32→    if (!canvas || !wrap) return;
+    33→
+    34→    const resize = () => {
+    35→      const rect = wrap.getBoundingClientRect();
+    36→      // En boy oranını koru (cols:rows)
+    37→      const aspect = GRID_COLS / GRID_ROWS;
+    38→      let w = rect.width;
+    39→      let h = w / aspect;
+    40→      if (h > rect.height) {
+    41→        h = rect.height;
+    42→        w = h * aspect;
+    43→      }
+    44→      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    45→      canvas.style.width = `${Math.floor(w)}px`;
+    46→      canvas.style.height = `${Math.floor(h)}px`;
+    47→      canvas.width = Math.floor(w * dpr);
+    48→      canvas.height = Math.floor(h * dpr);
+    49→      const ctx = canvas.getContext("2d");
+    50→      if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    51→    };
+    52→
+    53→    resize();
+    54→    const ro = new ResizeObserver(resize);
+    55→    ro.observe(wrap);
+    56→    return () => ro.disconnect();
+    57→  }, []);
+    58→
+    59→  // Render döngüsü (sürekli; hafif animasyonlar için)
+    60→  useEffect(() => {
+    61→    const render = () => {
+    62→      const canvas = canvasRef.current;
+    63→      if (canvas) {
+    64→        const ctx = canvas.getContext("2d");
+    65→        if (ctx) draw(ctx, canvas, snapshot, nextTargetChar);
+    66→      }
+    67→      rafRef.current = requestAnimationFrame(render);
+    68→    };
+    69→    rafRef.current = requestAnimationFrame(render);
+    70→    return () => {
+    71→      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    72→    };
+    73→  }, [snapshot, nextTargetChar]);
+    74→
+    75→  // Harf yeme efekti parçacıkları (canvas üzerinde transient)
+    76→  const effectsRef = useRef<Array<{ x: number; y: number; t: number; color: string }>>([]);
+    77→
+    78→  // Yeni harf/bonus yeme olayı tespiti → efekt parçacığı ekle
+    79→  useEffect(() => {
+    80→    const ev = snapshot.lastEvent;
+    81→    if (ev.kind === "ate_correct" || ev.kind === "ate_bonus" || ev.kind === "word_complete") {
+    82→      // Yılan başı pozisyonunda sparkle efekti
+    83→      const head = snapshot.snake[0];
+    84→      if (head) {
+    85→        effectsRef.current.push({
+    86→          x: head.x,
+    87→          y: head.y,
+    88→          t: performance.now(),
+    89→          color: ev.kind === "ate_wrong" ? "#f87171" : ev.kind === "ate_bonus" ? "#a855f7" : "#fbbf24",
+    90→        });
+    91→      }
+    92→    }
+    93→  }, [snapshot.lastEvent, snapshot.snake]);
+    94→
+    95→  return (
+    96→    <div ref={wrapRef} className="relative h-full w-full">
+    97→      <canvas ref={canvasRef} className="block h-full w-full rounded-xl" />
+    98→      <BoostTrailLayer snapshot={snapshot} />
+    99→      <EatEffectsLayer effectsRef={effectsRef} snapshot={snapshot} />
+   100→      <DeathEffectLayer snapshot={snapshot} />
+   101→    </div>
+   102→  );
+   103→}
+   104→
+   105→// ----------------------------------------------------------------------------
+   106→// Boost trail katmanı — yılan boost halindeyken amber iz bırakır
+   107→// ----------------------------------------------------------------------------
+   108→function BoostTrailLayer({ snapshot }: { snapshot: GameSnapshot }) {
+   109→  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+   110→  const rafRef = useRef<number | null>(null);
+   111→  const trailRef = useRef<Array<{ x: number; y: number; t: number }>>([]);
+   112→
+   113→  useEffect(() => {
+   114→    const render = () => {
+   115→      const canvas = canvasRef.current;
+   116→      const mainCanvas = document.querySelector<HTMLCanvasElement>(".block.h-full.w-full.rounded-xl");
+   117→      if (canvas && mainCanvas) {
+   118→        const ctx = canvas.getContext("2d");
+   119→        if (ctx) {
+   120→          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+   121→          const w = mainCanvas.clientWidth;
+   122→          const h = mainCanvas.clientHeight;
+   123→          if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+   124→            canvas.width = w * dpr;
+   125→            canvas.height = h * dpr;
+   126→            canvas.style.width = `${w}px`;
+   127→            canvas.style.height = `${h}px`;
+   128→            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+   129→          }
+   130→          ctx.clearRect(0, 0, w, h);
+   131→
+   132→          const boosted = snapshot.boostRemainingMs > 0;
+   133→          const cell = Math.min(w / GRID_COLS, h / GRID_ROWS);
+   134→          const offX = (w - cell * GRID_COLS) / 2;
+   135→          const offY = (h - cell * GRID_ROWS) / 2;
+   136→          const now = performance.now();
+   137→
+   138→          if (boosted && snapshot.status === "playing" && snapshot.snake[0]) {
+   139→            const head = snapshot.snake[0];
+   140→            trailRef.current.push({
+   141→              x: offX + head.x * cell + cell / 2,
+   142→              y: offY + head.y * cell + cell / 2,
+   143→              t: now,
+   144→            });
+   145→          }
+   146→
+   147→          // Eski trail noktalarını temizle (500ms'den eski)
+   148→          const TRAIL_LIFE = 500;
+   149→          trailRef.current = trailRef.current.filter((p) => now - p.t < TRAIL_LIFE);
+   150→
+   151→          for (const p of trailRef.current) {
+   152→            const age = (now - p.t) / TRAIL_LIFE;
+   153→            const alpha = (1 - age) * 0.4;
+   154→            const r = cell * 0.35 * (1 - age * 0.5);
+   155→            if (alpha <= 0 || r <= 0) continue;
+   156→            ctx.save();
+   157→            ctx.globalAlpha = alpha;
+   158→            const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+   159→            grad.addColorStop(0, "rgba(251, 191, 36, 0.6)");
+   160→            grad.addColorStop(0.5, "rgba(245, 158, 11, 0.3)");
+   161→            grad.addColorStop(1, "rgba(180, 83, 9, 0)");
+   162→            ctx.fillStyle = grad;
+   163→            ctx.beginPath();
+   164→            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+   165→            ctx.fill();
+   166→            ctx.restore();
+   167→          }
+   168→        }
+   169→      }
+   170→      rafRef.current = requestAnimationFrame(render);
+   171→    };
+   172→    rafRef.current = requestAnimationFrame(render);
+   173→    return () => {
+   174→      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+   175→    };
+   176→  }, [snapshot]);
+   177→
+   178→  return (
+   179→    <canvas
+   180→      ref={canvasRef}
+   181→      className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
+   182→    />
+   183→  );
+   184→}
+   185→
+   186→// ----------------------------------------------------------------------------
+   187→// Ölüm efekti katmanı — yılan öldüğünde gövde segmentleri dağılır
+   188→// ----------------------------------------------------------------------------
+   189→function DeathEffectLayer({ snapshot }: { snapshot: GameSnapshot }) {
+   190→  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+   191→  const rafRef = useRef<number | null>(null);
+   192→  const particlesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; color: string; life: number; size: number; rot: number; vrot: number }>>([]);
+   193→  const triggeredRef = useRef<boolean>(false);
+   194→
+   195→  useEffect(() => {
+   196→    const render = () => {
+   197→      const canvas = canvasRef.current;
+   198→      const mainCanvas = document.querySelector<HTMLCanvasElement>(".block.h-full.w-full.rounded-xl");
+   199→      if (canvas && mainCanvas) {
+   200→        const ctx = canvas.getContext("2d");
+   201→        if (ctx) {
+   202→          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+   203→          const w = mainCanvas.clientWidth;
+   204→          const h = mainCanvas.clientHeight;
+   205→          if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+   206→            canvas.width = w * dpr;
+   207→            canvas.height = h * dpr;
+   208→            canvas.style.width = `${w}px`;
+   209→            canvas.style.height = `${h}px`;
+   210→            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+   211→          }
+   212→          ctx.clearRect(0, 0, w, h);
+   213→
+   214→          const cell = Math.min(w / GRID_COLS, h / GRID_ROWS);
+   215→          const offX = (w - cell * GRID_COLS) / 2;
+   216→          const offY = (h - cell * GRID_ROWS) / 2;
+   217→
+   218→          const isDead = snapshot.status === "wrong_letter" || snapshot.status === "game_over" || snapshot.status === "time_up";
+   219→
+   220→          // Ölüm tetiklenince parçacıkları oluştur
+   221→          if (isDead && !triggeredRef.current && snapshot.snake.length > 0) {
+   222→            triggeredRef.current = true;
+   223→            const ev = snapshot.lastEvent;
+   224→            const isTimeUp = ev.kind === "time_up" || snapshot.status === "time_up";
+   225→            for (const seg of snapshot.snake) {
+   226→              const cx = offX + seg.x * cell + cell / 2;
+   227→              const cy = offY + seg.y * cell + cell / 2;
+   228→              for (let i = 0; i < 6; i++) {
+   229→                const angle = Math.random() * Math.PI * 2;
+   230→                const speed = 2 + Math.random() * 5;
+   231→                particlesRef.current.push({
+   232→                  x: cx,
+   233→                  y: cy,
+   234→                  vx: Math.cos(angle) * speed,
+   235→                  vy: Math.sin(angle) * speed - 1,
+   236→                  color: isTimeUp ? "#b45309" : "#7f1d1d",
+   237→                  life: 1,
+   238→                  size: cell * (0.15 + Math.random() * 0.2),
+   239→                  rot: Math.random() * Math.PI * 2,
+   240→                  vrot: (Math.random() - 0.5) * 0.4,
+   241→                });
+   242→              }
+   243→            }
+   244→          }
+   245→
+   246→          // Yeniden başladığında sıfırla
+   247→          if (!isDead && triggeredRef.current) {
+   248→            triggeredRef.current = false;
+   249→            particlesRef.current = [];
+   250→          }
+   251→
+   252→          // Parçacıkları çiz ve güncelle
+   253→          const gravity = 0.3;
+   254→          for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+   255→            const p = particlesRef.current[i];
+   256→            p.vy += gravity;
+   257→            p.x += p.vx;
+   258→            p.y += p.vy;
+   259→            p.rot += p.vrot;
+   260→            p.life -= 0.012;
+   261→            if (p.life <= 0 || p.y > h + 20) {
+   262→              particlesRef.current.splice(i, 1);
+   263→              continue;
+   264→            }
+   265→            ctx.save();
+   266→            ctx.translate(p.x, p.y);
+   267→            ctx.rotate(p.rot);
+   268→            ctx.globalAlpha = Math.max(0, p.life);
+   269→            ctx.fillStyle = p.color;
+   270→            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+   271→            ctx.restore();
+   272→          }
+   273→        }
+   274→      }
+   275→      rafRef.current = requestAnimationFrame(render);
+   276→    };
+   277→    rafRef.current = requestAnimationFrame(render);
+   278→    return () => {
+   279→      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+   280→    };
+   281→  }, [snapshot]);
+   282→
+   283→  return (
+   284→    <canvas
+   285→      ref={canvasRef}
+   286→      className="pointer-events-none absolute inset-0 z-15 h-full w-full"
+   287→    />
+   288→  );
+   289→}
+   290→
+   291→// ----------------------------------------------------------------------------
+   292→// Harf yeme efekti katmanı — yılan başında kısa sparkle patlaması
+   293→// ----------------------------------------------------------------------------
+   294→function EatEffectsLayer({
+   295→  effectsRef,
+   296→  snapshot,
+   297→}: {
+   298→  effectsRef: React.RefObject<Array<{ x: number; y: number; t: number; color: string }>>;
+   299→  snapshot: GameSnapshot;
+   300→}) {
+   301→  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+   302→  const rafRef = useRef<number | null>(null);
+   303→
+   304→  useEffect(() => {
+   305→    const render = () => {
+   306→      const canvas = canvasRef.current;
+   307→      const mainCanvas = document.querySelector<HTMLCanvasElement>(".block.h-full.w-full.rounded-xl");
+   308→      if (canvas && mainCanvas) {
+   309→        const ctx = canvas.getContext("2d");
+   310→        if (ctx) {
+   311→          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+   312→          const w = mainCanvas.clientWidth;
+   313→          const h = mainCanvas.clientHeight;
+   314→          if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+   315→            canvas.width = w * dpr;
+   316→            canvas.height = h * dpr;
+   317→            canvas.style.width = `${w}px`;
+   318→            canvas.style.height = `${h}px`;
+   319→            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+   320→          }
+   321→          ctx.clearRect(0, 0, w, h);
+   322→          const cell = Math.min(w / GRID_COLS, h / GRID_ROWS);
+   323→          const offX = (w - cell * GRID_COLS) / 2;
+   324→          const offY = (h - cell * GRID_ROWS) / 2;
+   325→          const now = performance.now();
+   326→          const DURATION = 600;
+   327→          const effects = effectsRef.current;
+   328→          for (let i = effects.length - 1; i >= 0; i--) {
+   329→            const e = effects[i];
+   330→            const elapsed = now - e.t;
+   331→            if (elapsed > DURATION) {
+   332→              effects.splice(i, 1);
+   333→              continue;
+   334→            }
+   335→            const progress = elapsed / DURATION;
+   336→            const cx = offX + e.x * cell + cell / 2;
+   337→            const cy = offY + e.y * cell + cell / 2;
+   338→            // Genişleyen halka
+   339→            const ringR = cell * 0.3 + progress * cell * 0.8;
+   340→            ctx.save();
+   341→            ctx.globalAlpha = 1 - progress;
+   342→            ctx.strokeStyle = e.color;
+   343→            ctx.lineWidth = 2;
+   344→            ctx.beginPath();
+   345→            ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+   346→            ctx.stroke();
+   347→            // Sparkle parçacıkları (8 yönde)
+   348→            for (let s = 0; s < 8; s++) {
+   349→              const angle = (s / 8) * Math.PI * 2;
+   350→              const dist = progress * cell * 0.6;
+   351→              const sx = cx + Math.cos(angle) * dist;
+   352→              const sy = cy + Math.sin(angle) * dist;
+   353→              const sr = (1 - progress) * cell * 0.08;
+   354→              ctx.fillStyle = e.color;
+   355→              ctx.globalAlpha = (1 - progress) * 0.9;
+   356→              ctx.beginPath();
+   357→              ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+   358→              ctx.fill();
+   359→            }
+   360→            ctx.restore();
+   361→          }
+   362→        }
+   363→      }
+   364→      rafRef.current = requestAnimationFrame(render);
+   365→    };
+   366→    rafRef.current = requestAnimationFrame(render);
+   367→    return () => {
+   368→      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+   369→    };
+   370→  }, [effectsRef, snapshot]);
+   371→
+   372→  return (
+   373→    <canvas
+   374→      ref={canvasRef}
+   375→      className="pointer-events-none absolute inset-0 z-10 h-full w-full"
+   376→    />
+   377→  );
+   378→}
+   379→
+   380→// ----------------------------------------------------------------------------
+   381→// Çizim
+   382→// ----------------------------------------------------------------------------
+   383→function draw(
+   384→  ctx: CanvasRenderingContext2D,
+   385→  canvas: HTMLCanvasElement,
+   386→  s: GameSnapshot,
+   387→  nextTargetChar: string | null
+   388→) {
+   389→  const w = canvas.clientWidth;
+   390→  const h = canvas.clientHeight;
+   391→  if (w === 0 || h === 0) return;
+   392→  const cell = Math.min(w / GRID_COLS, h / GRID_ROWS);
+   393→  const boardW = cell * GRID_COLS;
+   394→  const boardH = cell * GRID_ROWS;
+   395→  const offX = (w - boardW) / 2;
+   396→  const offY = (h - boardH) / 2;
+   397→
+   398→  // Arka plan
+   399→  ctx.clearRect(0, 0, w, h);
+   400→  drawBoardBg(ctx, offX, offY, boardW, boardH, cell, s);
+   401→
+   402→  // Izgara çizgileri (hafif)
+   403→  drawGrid(ctx, offX, offY, cell);
+   404→
+   405→  // Engeller
+   406→  const t = performance.now() / 1000;
+   407→  for (const obs of s.obstacles) {
+   408→    const cx = offX + obs.x * cell + cell / 2;
+   409→    const cy = offY + obs.y * cell + cell / 2;
+   410→    drawObstacle(ctx, cx, cy, cell, obs.shape, t);
+   411→  }
+   412→
+   413→  // Buz alanları
+   414→  for (const ice of s.iceZones) {
+   415→    const cx = offX + ice.x * cell;
+   416→    const cy = offY + ice.y * cell;
+   417→    drawIce(ctx, cx, cy, cell, t);
+   418→  }
+   419→
+   420→  // Hız artırıcılar
+   421→  for (const booster of s.speedBoosters) {
+   422→    if (booster.eaten) continue;
+   423→    const cx = offX + booster.x * cell + cell / 2;
+   424→    const cy = offY + booster.y * cell + cell / 2;
+   425→    drawBooster(ctx, cx, cy, cell, t + booster.phase);
+   426→  }
+   427→
+   428→  // Bonus harfler
+   429→  for (const bonus of s.bonusLetters) {
+   430→    if (bonus.eaten) continue;
+   431→    const cx = offX + bonus.x * cell + cell / 2;
+   432→    const cy = offY + bonus.y * cell + cell / 2;
+   433→    drawBonus(ctx, cx, cy, cell, bonus.char, t + bonus.phase);
+   434→  }
+   435→
+   436→  // Harfler
+   437→  for (const letter of s.letters) {
+   438→    if (letter.eaten) continue;
+   439→    const cx = offX + letter.x * cell + cell / 2;
+   440→    const cy = offY + letter.y * cell + cell / 2;
+   441→    const isTarget = letter.orderIndex === s.currentLetterIndex;
+   442→    drawLetter(ctx, cx, cy, cell, letter.char, isTarget, t + letter.phase, nextTargetChar);
+   443→  }
+   444→
+   445→  // Yılan
+   446→  drawSnake(ctx, s, offX, offY, cell, t);
+   447→
+   448→  // Hatalı harf / ölüm efekti
+   449→  if (s.status === "wrong_letter" || s.status === "game_over" || s.status === "time_up") {
+   450→    const isTime = s.status === "time_up";
+   451→    ctx.fillStyle = isTime ? "rgba(180, 83, 9, 0.30)" : "rgba(127, 29, 29, 0.28)";
+   452→    ctx.fillRect(offX, offY, boardW, boardH);
+   453→  }
+   454→  if (s.status === "level_complete") {
+   455→    ctx.fillStyle = "rgba(6, 78, 59, 0.30)";
+   456→    ctx.fillRect(offX, offY, boardW, boardH);
+   457→  }
+   458→}
+   459→
+   460→function drawBoardBg(
+   461→  ctx: CanvasRenderingContext2D,
+   462→  x: number,
+   463→  y: number,
+   464→  w: number,
+   465→  h: number,
+   466→  cell: number,
+   467→  s: GameSnapshot
+   468→) {
+   469→  // Duruma göre kenar rengi
+   470→  let borderColor = "rgba(148, 163, 184, 0.25)";
+   471→  let glowColor = "rgba(16, 185, 129, 0.15)";
+   472→  if (s.boostRemainingMs > 0) {
+   473→    borderColor = "rgba(251, 191, 36, 0.5)";
+   474→    glowColor = "rgba(251, 191, 36, 0.25)";
+   475→  } else if (s.activeSpeedMultiplier < 1) {
+   476→    borderColor = "rgba(56, 189, 248, 0.5)";
+   477→    glowColor = "rgba(56, 189, 248, 0.2)";
+   478→  } else if (s.timeLimitMs > 0 && s.timeRemainingMs <= 5000) {
+   479→    borderColor = "rgba(244, 63, 94, 0.5)";
+   480→    glowColor = "rgba(244, 63, 94, 0.2)";
+   481→  }
+   482→
+   483→  // Dış glow
+   484→  ctx.save();
+   485→  ctx.shadowColor = glowColor;
+   486→  ctx.shadowBlur = 20;
+   487→  // Yumuşak gradient tahta
+   488→  const g = ctx.createLinearGradient(x, y, x, y + h);
+   489→  g.addColorStop(0, "#0f172a");
+   490→  g.addColorStop(1, "#111c33");
+   491→  ctx.fillStyle = g;
+   492→  roundRect(ctx, x, y, w, h, Math.min(16, cell / 2));
+   493→  ctx.fill();
+   494→  ctx.restore();
+   495→
+   496→  // Kenarlık
+   497→  ctx.lineWidth = 2;
+   498→  ctx.strokeStyle = borderColor;
+   499→  roundRect(ctx, x, y, w, h, Math.min(16, cell / 2));
+   500→  ctx.stroke();
+   501→}
+   502→
+   503→function drawGrid(ctx: CanvasRenderingContext2D, offX: number, offY: number, cell: number) {
+   504→  ctx.save();
+   505→  ctx.strokeStyle = "rgba(148, 163, 184, 0.06)";
+   506→  ctx.lineWidth = 1;
+   507→  for (let i = 1; i < GRID_COLS; i++) {
+   508→    ctx.beginPath();
+   509→    ctx.moveTo(offX + i * cell, offY);
+   510→    ctx.lineTo(offX + i * cell, offY + cell * GRID_ROWS);
+   511→    ctx.stroke();
+   512→  }
+   513→  for (let j = 1; j < GRID_ROWS; j++) {
+   514→    ctx.beginPath();
+   515→    ctx.moveTo(offX, offY + j * cell);
+   516→    ctx.lineTo(offX + cell * GRID_COLS, offY + j * cell);
+   517→    ctx.stroke();
+   518→  }
+   519→  ctx.restore();
+   520→}
+   521→
+   522→// ----------------------------------------------------------------------------
+   523→// Engel çizimi
+   524→// ----------------------------------------------------------------------------
+   525→function drawObstacle(
+   526→  ctx: CanvasRenderingContext2D,
+   527→  cx: number,
+   528→  cy: number,
+   529→  cell: number,
+   530→  shape: "block" | "spike",
+   531→  time: number
+   532→) {
+   533→  const half = cell * 0.42;
+   534→  if (shape === "block") {
+   535→    // Taş blok
+   536→    const grad = ctx.createLinearGradient(cx - half, cy - half, cx + half, cy + half);
+   537→    grad.addColorStop(0, "#475569");
+   538→    grad.addColorStop(1, "#1e293b");
+   539→    ctx.fillStyle = grad;
+   540→    roundRect(ctx, cx - half, cy - half, half * 2, half * 2, 4);
+   541→    ctx.fill();
+   542→    // Üst highlight
+   543→    ctx.fillStyle = "rgba(148, 163, 184, 0.25)";
+   544→    roundRect(ctx, cx - half + 2, cy - half + 2, half * 2 - 4, 4, 2);
+   545→    ctx.fill();
+   546→    // Çatlak
+   547→    ctx.strokeStyle = "rgba(15, 23, 42, 0.6)";
+   548→    ctx.lineWidth = 1;
+   549→    ctx.beginPath();
+   550→    ctx.moveTo(cx - half / 2, cy);
+   551→    ctx.lineTo(cx + half / 3, cy - half / 3);
+   552→    ctx.lineTo(cx + half / 2, cy + half / 4);
+   553→    ctx.stroke();
+   554→  } else {
+   555→    // Spike — dönen tehlike işareti
+   556→    const pulse = 1 + Math.sin(time * 3) * 0.08;
+   557→    const r = half * pulse;
+   558→    ctx.save();
+   559→    ctx.translate(cx, cy);
+   560→    ctx.rotate(time * 0.5);
+   561→    // Arka glow
+   562→    ctx.shadowColor = "rgba(244, 63, 94, 0.6)";
+   563→    ctx.shadowBlur = 12;
+   564→    // Yıldız spike
+   565→    ctx.fillStyle = "#ef4444";
+   566→    ctx.beginPath();
+   567→    for (let i = 0; i < 8; i++) {
+   568→      const a = (i / 8) * Math.PI * 2;
+   569→      const rad = i % 2 === 0 ? r : r * 0.5;
+   570→      const px = Math.cos(a) * rad;
+   571→      const py = Math.sin(a) * rad;
+   572→      if (i === 0) ctx.moveTo(px, py);
+   573→      else ctx.lineTo(px, py);
+   574→    }
+   575→    ctx.closePath();
+   576→    ctx.fill();
+   577→    ctx.shadowBlur = 0;
+   578→    // İç nokta
+   579→    ctx.fillStyle = "#fef2f2";
+   580→    ctx.beginPath();
+   581→    ctx.arc(0, 0, r * 0.2, 0, Math.PI * 2);
+   582→    ctx.fill();
+   583→    ctx.restore();
+   584→  }
+   585→}
+   586→
+   587→// ----------------------------------------------------------------------------
+   588→// Buz alanı çizimi — buzlu kare, kristal parıltıları
+   589→// ----------------------------------------------------------------------------
+   590→function drawIce(
+   591→  ctx: CanvasRenderingContext2D,
+   592→  x: number,
+   593→  y: number,
+   594→  cell: number,
+   595→  time: number
+   596→) {
+   597→  const pad = 2;
+   598→  const w = cell - pad * 2;
+   599→  const h = cell - pad * 2;
+   600→
+   601→  // Buz arka plan (açık mavi-beyaz gradient)
+   602→  const grad = ctx.createLinearGradient(x + pad, y + pad, x + pad + w, y + pad + h);
+   603→  grad.addColorStop(0, "rgba(186, 230, 253, 0.45)");
+   604→  grad.addColorStop(0.5, "rgba(224, 242, 254, 0.55)");
+   605→  grad.addColorStop(1, "rgba(125, 211, 252, 0.4)");
+   606→  ctx.fillStyle = grad;
+   607→  roundRect(ctx, x + pad, y + pad, w, h, 6);
+   608→  ctx.fill();
+   609→
+   610→  // Kenar (buz kristali effect)
+   611→  ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
+   612→  ctx.lineWidth = 1.5;
+   613→  ctx.stroke();
+   614→
+   615→  // Kristal parıltıları (move slowly)
+   616→  ctx.save();
+   617→  const sparkleCount = 3;
+   618→  for (let i = 0; i < sparkleCount; i++) {
+   619→    const sx = x + cell / 2 + Math.cos(time * 0.8 + i * 2.1) * (cell * 0.2);
+   620→    const sy = y + cell / 2 + Math.sin(time * 0.8 + i * 2.1) * (cell * 0.2);
+   621→    const sr = 1.5 + Math.sin(time * 3 + i) * 0.8;
+   622→    ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + Math.sin(time * 4 + i) * 0.3})`;
+   623→    ctx.beginPath();
+   624→    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+   625→    ctx.fill();
+   626→  }
+   627→  ctx.restore();
+   628→
+   629→  // Merkez buz kristali (basit yıldız şekil)
+   630→  ctx.save();
+   631→  ctx.translate(x + cell / 2, y + cell / 2);
+   632→  ctx.rotate(time * 0.3);
+   633→  ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+   634→  ctx.lineWidth = 1.2;
+   635→  const r = cell * 0.18;
+   636→  for (let i = 0; i < 6; i++) {
+   637→    const a = (i / 6) * Math.PI * 2;
+   638→    ctx.beginPath();
+   639→    ctx.moveTo(0, 0);
+   640→    ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+   641→    ctx.stroke();
+   642→  }
+   643→  ctx.restore();
+   644→}
+   645→
+   646→// ----------------------------------------------------------------------------
+   647→// Hız artırıcı çizimi — şimşek ikonu, sarı/amber glow
+   648→// ----------------------------------------------------------------------------
+   649→function drawBooster(
+   650→  ctx: CanvasRenderingContext2D,
+   651→  cx: number,
+   652→  cy: number,
+   653→  cell: number,
+   654→  time: number
+   655→) {
+   656→  const pulse = 1 + Math.sin(time * 4) * 0.08;
+   657→  const r = cell * 0.38 * pulse;
+   658→
+   659→  // Dış glow halkası (amber)
+   660→  ctx.save();
+   661→  ctx.shadowColor = "rgba(251, 191, 36, 0.8)";
+   662→  ctx.shadowBlur = 18;
+   663→  ctx.strokeStyle = "rgba(251, 191, 36, 0.7)";
+   664→  ctx.lineWidth = 2;
+   665→  ctx.beginPath();
+   666→  ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+   667→  ctx.stroke();
+   668→  ctx.restore();
+   669→
+   670→  // Arka plan disk (amber gradient)
+   671→  const grad = ctx.createRadialGradient(cx - r / 3, cy - r / 3, r / 4, cx, cy, r);
+   672→  grad.addColorStop(0, "#fef3c7");
+   673→  grad.addColorStop(0.5, "#f59e0b");
+   674→  grad.addColorStop(1, "#b45309");
+   675→  ctx.fillStyle = grad;
+   676→  ctx.beginPath();
+   677→  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+   678→  ctx.fill();
+   679→
+   680→  // Şimşek ikonu (zigzag)
+   681→  ctx.save();
+   682→  ctx.translate(cx, cy);
+   683→  ctx.fillStyle = "#ffffff";
+   684→  ctx.strokeStyle = "#7c2d12";
+   685→  ctx.lineWidth = 1;
+   686→  const sw = r * 0.45;
+   687→  const sh = r * 0.7;
+   688→  ctx.beginPath();
+   689→  ctx.moveTo(-sw * 0.3, -sh * 0.5);
+   690→  ctx.lineTo(sw * 0.2, -sh * 0.1);
+   691→  ctx.lineTo(-sw * 0.05, -sh * 0.1);
+   692→  ctx.lineTo(sw * 0.3, sh * 0.5);
+   693→  ctx.lineTo(-sw * 0.2, sh * 0.1);
+   694→  ctx.lineTo(sw * 0.05, sh * 0.1);
+   695→  ctx.closePath();
+   696→  ctx.fill();
+   697→  ctx.stroke();
+   698→  ctx.restore();
+   699→}
+   700→
+   701→// ----------------------------------------------------------------------------
+   702→// Bonus harf çizimi — altın yıldız + harf
+   703→// ----------------------------------------------------------------------------
+   704→function drawBonus(
+   705→  ctx: CanvasRenderingContext2D,
+   706→  cx: number,
+   707→  cy: number,
+   708→  cell: number,
+   709→  char: string,
+   710→  time: number
+   711→) {
+   712→  const pulse = 1 + Math.sin(time * 3.5) * 0.06;
+   713→  const r = cell * 0.4 * pulse;
+   714→
+   715→  // Dış halka glow
+   716→  ctx.save();
+   717→  ctx.shadowColor = "rgba(168, 85, 247, 0.7)";
+   718→  ctx.shadowBlur = 16;
+   719→  ctx.strokeStyle = "rgba(168, 85, 247, 0.6)";
+   720→  ctx.lineWidth = 2;
+   721→  ctx.beginPath();
+   722→  ctx.arc(cx, cy, r + 5, 0, Math.PI * 2);
+   723→  ctx.stroke();
+   724→  ctx.restore();
+   725→
+   726→  // Mor yıldız arka plan
+   727→  const grad = ctx.createRadialGradient(cx - r / 3, cy - r / 3, r / 4, cx, cy, r);
+   728→  grad.addColorStop(0, "#f3e8ff");
+   729→  grad.addColorStop(0.5, "#a855f7");
+   730→  grad.addColorStop(1, "#6b21a8");
+   731→  ctx.fillStyle = grad;
+   732→  ctx.beginPath();
+   733→  // 5 köşeli yıldız
+   734→  for (let i = 0; i < 10; i++) {
+   735→    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+   736→    const rad = i % 2 === 0 ? r : r * 0.55;
+   737→    const px = cx + Math.cos(a) * rad;
+   738→    const py = cy + Math.sin(a) * rad;
+   739→    if (i === 0) ctx.moveTo(px, py);
+   740→    else ctx.lineTo(px, py);
+   741→  }
+   742→  ctx.closePath();
+   743→  ctx.fill();
+   744→
+   745→  // İnce kenar
+   746→  ctx.lineWidth = 1.5;
+   747→  ctx.strokeStyle = "rgba(107, 33, 168, 0.9)";
+   748→  ctx.stroke();
+   749→
+   750→  // Harf
+   751→  ctx.fillStyle = "#ffffff";
+   752→  ctx.font = `800 ${Math.floor(cell * 0.42)}px ${FONT_FAMILY}`;
+   753→  ctx.textAlign = "center";
+   754→  ctx.textBaseline = "middle";
+   755→  ctx.fillText(char, cx, cy + cell * 0.02);
+   756→}
+   757→
+   758→function drawLetter(
+   759→  ctx: CanvasRenderingContext2D,
+   760→  cx: number,
+   761→  cy: number,
+   762→  cell: number,
+   763→  char: string,
+   764→  isTarget: boolean,
+   765→  time: number,
+   766→  nextTargetChar: string | null
+   767→) {
+   768→  const pulse = 1 + Math.sin(time * 2.5) * 0.04;
+   769→  const r = (cell * 0.42) * pulse;
+   770→
+   771→  // Eğer bu harf aynı zamanda "sıradaki hedef" ise altın halka
+   772→  if (isTarget || char === nextTargetChar) {
+   773→    ctx.save();
+   774→    ctx.beginPath();
+   775→    ctx.arc(cx, cy, r + 4 + Math.sin(time * 4) * 2, 0, Math.PI * 2);
+   776→    ctx.strokeStyle = "rgba(251, 191, 36, 0.85)";
+   777→    ctx.lineWidth = 2.5;
+   778→    ctx.shadowColor = "rgba(251, 191, 36, 0.7)";
+   779→    ctx.shadowBlur = 14;
+   780→    ctx.stroke();
+   781→    ctx.restore();
+   782→  }
+   783→
+   784→  // Harf diski
+   785→  const baseColor = isTarget ? "#f59e0b" : "#fbbf24";
+   786→  const grad = ctx.createRadialGradient(cx - r / 3, cy - r / 3, r / 4, cx, cy, r);
+   787→  grad.addColorStop(0, "#fde68a");
+   788→  grad.addColorStop(0.5, baseColor);
+   789→  grad.addColorStop(1, "#b45309");
+   790→  ctx.fillStyle = grad;
+   791→  ctx.beginPath();
+   792→  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+   793→  ctx.fill();
+   794→
+   795→  // İç kenar
+   796→  ctx.lineWidth = 1.5;
+   797→  ctx.strokeStyle = "rgba(180, 83, 9, 0.9)";
+   798→  ctx.stroke();
+   799→
+   800→  // Harf
+   801→  ctx.fillStyle = "#3b1d04";
+   802→  ctx.font = `800 ${Math.floor(cell * 0.5)}px ${FONT_FAMILY}`;
+   803→  ctx.textAlign = "center";
+   804→  ctx.textBaseline = "middle";
+   805→  ctx.fillText(char, cx, cy + cell * 0.02);
+   806→}
+   807→
+   808→function drawSnake(
+   809→  ctx: CanvasRenderingContext2D,
+   810→  s: GameSnapshot,
+   811→  offX: number,
+   812→  offY: number,
+   813→  cell: number,
+   814→  time: number
+   815→) {
+   816→  const dead = s.status === "wrong_letter" || s.status === "game_over" || s.status === "time_up";
+   817→  const celebrate = s.status === "level_complete";
+   818→  const boosted = s.boostRemainingMs > 0;
+   819→  const onIce = s.activeSpeedMultiplier < 1;
+   820→  const body = s.snake;
+   821→  if (body.length === 0) return;
+   822→
+   823→  // Boost halinde baş çevresinde glow
+   824→  if (boosted && !dead && !celebrate) {
+   825→    const head = body[0];
+   826→    const hx = offX + head.x * cell + cell / 2;
+   827→    const hy = offY + head.y * cell + cell / 2;
+   828→    ctx.save();
+   829→    const glow = 0.5 + Math.sin(time * 10) * 0.5;
+   830→    ctx.fillStyle = `rgba(251, 191, 36, ${0.15 + glow * 0.2})`;
+   831→    ctx.beginPath();
+   832→    ctx.arc(hx, hy, cell * 0.9, 0, Math.PI * 2);
+   833→    ctx.fill();
+   834→    ctx.restore();
+   835→  }
+   836→
+   837→  // Gövde segmentleri (kuyruktan başa)
+   838→  for (let i = body.length - 1; i >= 0; i--) {
+   839→    const seg = body[i];
+   840→    const cx = offX + seg.x * cell + cell / 2;
+   841→    const cy = offY + seg.y * cell + cell / 2;
+   842→    const t = i / Math.max(1, body.length - 1); // 0=head,1=tail
+   843→    const r = cell * (0.42 - t * 0.08);
+   844→
+   845→    let color1: string, color2: string;
+   846→    if (dead) {
+   847→      color1 = "#7f1d1d";
+   848→      color2 = "#450a0a";
+   849→    } else if (celebrate) {
+   850→      color1 = "#34d399";
+   851→      color2 = "#059669";
+   852→    } else if (boosted) {
+   853→      // Boost: amber/altın tonları
+   854→      color1 = lerpColor("#f59e0b", "#b45309", t);
+   855→      color2 = lerpColor("#d97706", "#78350f", t);
+   856→    } else if (onIce) {
+   857→      // Buz üzerinde: mavi-yeşil tonları
+   858→      color1 = lerpColor("#38bdf8", "#0c4a6e", t);
+   859→      color2 = lerpColor("#0ea5e9", "#082f49", t);
+   860→    } else {
+   861→      // Baş → kuyruk: emerald tonları
+   862→      color1 = lerpColor("#10b981", "#022c22", t);
+   863→      color2 = lerpColor("#047857", "#022c22", t);
+   864→    }
+   865→    const grad = ctx.createRadialGradient(cx - r / 3, cy - r / 3, r / 4, cx, cy, r);
+   866→    grad.addColorStop(0, color1);
+   867→    grad.addColorStop(1, color2);
+   868→    ctx.fillStyle = grad;
+   869→    ctx.beginPath();
+   870→    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+   871→    ctx.fill();
+   872→
+   873→    // İnce kenar
+   874→    ctx.lineWidth = 1;
+   875→    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+   876→    ctx.stroke();
+   877→  }
+   878→
+   879→  // Baş detayları: gözler + yön işareti + dil
+   880→  const head = body[0];
+   881→  const hx = offX + head.x * cell + cell / 2;
+   882→  const hy = offY + head.y * cell + cell / 2;
+   883→  const eyeOffset = cell * 0.14;
+   884→  const eyeR = cell * 0.085;
+   885→  const dir = s.direction;
+   886→  const ex1 = hx + (dir === "left" ? -eyeOffset : dir === "right" ? eyeOffset : -eyeOffset * 0.6);
+   887→  const ey1 = hy + (dir === "up" ? -eyeOffset : dir === "down" ? eyeOffset : -eyeOffset * 0.6);
+   888→  const ex2 = hx + (dir === "left" ? -eyeOffset : dir === "right" ? eyeOffset : eyeOffset * 0.6);
+   889→  const ey2 = hy + (dir === "up" ? -eyeOffset : dir === "down" ? eyeOffset : -eyeOffset * 0.6);
+   890→
+   891→  // Yön oku (başın önünde küçük üçgen — hareket yönünü gösterir)
+   892→  if (!dead) {
+   893→    ctx.save();
+   894→    ctx.fillStyle = boosted ? "rgba(254, 243, 199, 0.9)" : "rgba(255, 255, 255, 0.7)";
+   895→    const arrowSize = cell * 0.14;
+   896→    const arrowDist = cell * 0.36;
+   897→    const ax = hx + (dir === "left" ? -arrowDist : dir === "right" ? arrowDist : 0);
+   898→    const ay = hy + (dir === "up" ? -arrowDist : dir === "down" ? arrowDist : 0);
+   899→    ctx.translate(ax, ay);
+   900→    const angle = dir === "right" ? 0 : dir === "down" ? Math.PI / 2 : dir === "left" ? Math.PI : -Math.PI / 2;
+   901→    ctx.rotate(angle);
+   902→    ctx.beginPath();
+   903→    ctx.moveTo(arrowSize, 0);
+   904→    ctx.lineTo(-arrowSize * 0.5, -arrowSize * 0.7);
+   905→    ctx.lineTo(-arrowSize * 0.5, arrowSize * 0.7);
+   906→    ctx.closePath();
+   907→    ctx.fill();
+   908→    ctx.restore();
+   909→  }
+   910→
+   911→  // Göz kırpma animasyonu (her ~4 saniye kısa kırpma)
+   912→  const blinkCycle = (time * 1000) % 4000;
+   913→  const isBlinking = !dead && !celebrate && blinkCycle < 120;
+   914→
+   915→  ctx.fillStyle = "#ffffff";
+   916→  if (!isBlinking) {
+   917→    ctx.beginPath(); ctx.arc(ex1, ey1, eyeR, 0, Math.PI * 2); ctx.fill();
+   918→    ctx.beginPath(); ctx.arc(ex2, ey2, eyeR, 0, Math.PI * 2); ctx.fill();
+   919→    // Pupil — hareket yönüne kayar
+   920→    const pupilR = eyeR * 0.55;
+   921→    const pupilShift = eyeR * 0.25;
+   922→    const px = (dir === "left" ? -pupilShift : dir === "right" ? pupilShift : 0);
+   923→    const py = (dir === "up" ? -pupilShift : dir === "down" ? pupilShift : 0);
+   924→    ctx.fillStyle = dead ? "#7f1d1d" : "#0f172a";
+   925→    ctx.beginPath(); ctx.arc(ex1 + px, ey1 + py, pupilR, 0, Math.PI * 2); ctx.fill();
+   926→    ctx.beginPath(); ctx.arc(ex2 + px, ey2 + py, pupilR, 0, Math.PI * 2); ctx.fill();
+   927→    // Göz parıltısı
+   928→    ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+   929→    ctx.beginPath(); ctx.arc(ex1 + px - pupilR * 0.3, ey1 + py - pupilR * 0.3, pupilR * 0.35, 0, Math.PI * 2); ctx.fill();
+   930→    ctx.beginPath(); ctx.arc(ex2 + px - pupilR * 0.3, ey2 + py - pupilR * 0.3, pupilR * 0.35, 0, Math.PI * 2); ctx.fill();
+   931→  } else {
+   932→    // Kırpma: yatay çizgi
+   933→    ctx.strokeStyle = dead ? "#7f1d1d" : "#0f172a";
+   934→    ctx.lineWidth = 2;
+   935→    ctx.beginPath(); ctx.moveTo(ex1 - eyeR, ey1); ctx.lineTo(ex1 + eyeR, ey1); ctx.stroke();
+   936→    ctx.beginPath(); ctx.moveTo(ex2 - eyeR, ey2); ctx.lineTo(ex2 + eyeR, ey2); ctx.stroke();
+   937→  }
+   938→
+   939→  // Dil (önde, hareket yönüne doğru) — normal hızda sarkar
+   940→  if (!dead && !celebrate && !isBlinking) {
+   941→    ctx.save();
+   942→    ctx.fillStyle = "#f43f5e";
+   943→    const tongueLen = cell * 0.25;
+   944→    const tongueW = cell * 0.04;
+   945→    const tx = hx + (dir === "left" ? -cell * 0.3 : dir === "right" ? cell * 0.3 : 0);
+   946→    const ty = hy + (dir === "up" ? -cell * 0.3 : dir === "down" ? cell * 0.3 : 0);
+   947→    const wag = Math.sin(time * 8) * cell * 0.04;
+   948→    ctx.translate(tx, ty);
+   949→    const angle = dir === "right" ? 0 : dir === "down" ? Math.PI / 2 : dir === "left" ? Math.PI : -Math.PI / 2;
+   950→    ctx.rotate(angle);
+   951→    // Dil gövdesi
+   952→    ctx.fillRect(0, -tongueW / 2, tongueLen, tongueW);
+   953→    // Çatal
+   954→    ctx.beginPath();
+   955→    ctx.moveTo(tongueLen, -tongueW);
+   956→    ctx.lineTo(tongueLen + cell * 0.06 + wag, -tongueW * 0.3);
+   957→    ctx.lineTo(tongueLen, 0);
+   958→    ctx.lineTo(tongueLen + cell * 0.06 - wag, tongueW * 0.3);
+   959→    ctx.lineTo(tongueLen, tongueW);
+   960→    ctx.closePath();
+   961→    ctx.fill();
+   962→    ctx.restore();
+   963→  }
+   964→
+   965→  // Kutlama efekti: baş çevresinde parıltı
+   966→  if (celebrate) {
+   967→    ctx.save();
+   968→    const glow = 0.5 + Math.sin(time * 6) * 0.5;
+   969→    ctx.fillStyle = `rgba(52, 211, 153, ${0.15 + glow * 0.2})`;
+   970→    ctx.beginPath();
+   971→    ctx.arc(hx, hy, cell * 0.9, 0, Math.PI * 2);
+   972→    ctx.fill();
+   973→    ctx.restore();
+   974→  }
+   975→}
+   976→
+   977→// ----------------------------------------------------------------------------
+   978→// Yardımcılar
+   979→// ----------------------------------------------------------------------------
+   980→function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+   981→  ctx.beginPath();
+   982→  ctx.moveTo(x + r, y);
+   983→  ctx.arcTo(x + w, y, x + w, y + h, r);
+   984→  ctx.arcTo(x + w, y + h, x, y + h, r);
+   985→  ctx.arcTo(x, y + h, x, y, r);
+   986→  ctx.arcTo(x, y, x + w, y, r);
+   987→  ctx.closePath();
+   988→}
+   989→
+   990→function lerpColor(a: string, b: string, t: number): string {
+   991→  const pa = parseHex(a);
+   992→  const pb = parseHex(b);
+   993→  const r = Math.round(pa[0] + (pb[0] - pa[0]) * t);
+   994→  const g = Math.round(pa[1] + (pb[1] - pa[1]) * t);
+   995→  const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t);
+   996→  return `rgb(${r},${g},${bl})`;
+   997→}
+   998→
+   999→function parseHex(h: string): [number, number, number] {
+  1000→  const m = h.replace("#", "");
+  1001→  return [parseInt(m.slice(0, 2), 16), parseInt(m.slice(2, 4), 16), parseInt(m.slice(4, 6), 16)];
+  1002→}
+  1003→

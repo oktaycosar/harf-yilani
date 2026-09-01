@@ -37,11 +37,15 @@ import {
   checkAchievements,
   loadCategoryProgress,
   incrementCategoryProgress,
+  loadWeeklyStats,
+  recordGamePlay,
   type GameStats,
   type LeaderboardEntry,
   type Achievement,
   type CategoryProgress,
+  type WeeklyStatEntry,
 } from "@/lib/game/storage";
+import { loadSkin, saveSkin, type SnakeSkin } from "@/lib/game/snakeSkins";
 
 export interface UseSnakeGameApi {
   snapshot: GameSnapshot;
@@ -90,6 +94,12 @@ export interface UseSnakeGameApi {
   /** TTS ses seviyesi (0-1) */
   ttsVolume: number;
   setTtsVolumeLevel: (v: number) => void;
+  /** Aktif yılan skin'i */
+  skin: SnakeSkin;
+  /** Skin değiştir */
+  setSkin: (id: string) => void;
+  /** Haftalık istatistik (son 7 gün) */
+  weeklyStats: WeeklyStatEntry[];
 }
 
 export function useSnakeGame(): UseSnakeGameApi {
@@ -108,6 +118,8 @@ export function useSnakeGame(): UseSnakeGameApi {
   const [categoryProgress, setCategoryProgress] = useState<CategoryProgress>(() => loadCategoryProgress());
   const [soundVolume, setSoundVolumeState] = useState<number>(() => loadStats().soundVolume);
   const [ttsVolume, setTtsVolumeState] = useState<number>(() => loadStats().ttsVolume);
+  const [skin, setSkinState] = useState<SnakeSkin>(() => loadSkin());
+  const [weeklyStats, setWeeklyStats] = useState<WeeklyStatEntry[]>(() => loadWeeklyStats());
   const isDailyModeRef = useRef<boolean>(false);
 
   const recentWordsRef = useRef<string[]>([]);
@@ -332,6 +344,9 @@ export function useSnakeGame(): UseSnakeGameApi {
           wordsCompleted: wordsCompletedThisRunRef.current,
         });
         setStats(updated);
+        // Haftalık istatistiğe oyunu kaydet
+        const newWeekly = recordGamePlay(s.score);
+        setWeeklyStats(newWeekly);
         // Liderlik tablosuna ekle (yalnızca skor > 0 ise)
         if (s.score > 0) {
           const entry: LeaderboardEntry = {
@@ -472,6 +487,7 @@ export function useSnakeGame(): UseSnakeGameApi {
     setLeaderboard([]);
     setAchievements(loadAchievements());
     setCategoryProgress(loadCategoryProgress());
+    setWeeklyStats(loadWeeklyStats());
     setSoundVolumeState(cleared.soundVolume);
     setTtsVolumeState(cleared.ttsVolume);
   }, []);
@@ -507,6 +523,11 @@ export function useSnakeGame(): UseSnakeGameApi {
     const updated = setTtsVolume(v, statsRef.current);
     statsRef.current = updated;
     setStats(updated);
+  }, []);
+
+  const setSkin = useCallback((id: string) => {
+    saveSkin(id);
+    setSkinState(loadSkin());
   }, []);
 
   // Ref tabanlı aksiyonlar (klavye handler'ı stale closure yaşamaz)
@@ -610,5 +631,8 @@ export function useSnakeGame(): UseSnakeGameApi {
     setVolume,
     ttsVolume,
     setTtsVolumeLevel,
+    skin,
+    setSkin,
+    weeklyStats,
   };
 }
