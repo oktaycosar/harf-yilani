@@ -65,11 +65,20 @@ export function HUD({ snapshot, nextTargetChar, bestScore }: Props) {
               <motion.span
                 key={combo}
                 initial={{ scale: 0.7, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-bold text-amber-300 ring-1 ring-amber-500/30"
+                animate={{ scale: [0.7, 1.15, 1], opacity: 1 }}
+                transition={{ duration: 0.3 }}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 transition-colors",
+                  combo >= 10
+                    ? "bg-rose-500/25 text-rose-200 ring-rose-400/50 shadow-[0_0_10px_rgba(244,63,94,0.4)]"
+                    : combo >= 5
+                      ? "bg-amber-500/25 text-amber-100 ring-amber-400/50 shadow-[0_0_10px_rgba(251,191,36,0.4)]"
+                      : "bg-amber-500/20 text-amber-300 ring-amber-500/30"
+                )}
               >
                 <Sparkles className="h-3 w-3" />
                 COMBO ×{combo}
+                {combo >= 5 && <span className="text-[9px] uppercase">🔥</span>}
               </motion.span>
             )}
           </div>

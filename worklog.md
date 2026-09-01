@@ -280,3 +280,53 @@ Sonraki tur için öneriler:
 6. Comboboard x5+ için özel görsel efekt (ekran flash).
 7. Kelime kategorisi başına ilerleme takibi (her kategori %100).
 8. Haftalık istatistik özeti (Settings dialog'da grafik).
+
+---
+Task ID: 11 (Cron turu 5 — Boost trail + Ölüm efekti + Combo flash + Harf-by-harf animasyon + Level transition)
+Agent: webDevReview cron (Z.ai Code)
+Task: Boost trail efekti, yılan ölüm parçalanması, combo x5+ ekran flash, kelime tamamlama harf-by-harf animasyonu, level geçiş fade
+
+Work Log:
+- **Boost trail efekti** (`GameCanvas.tsx` — BoostTrailLayer): Yılan boost halindeyken arkasında amber/altın iz bırakır. Her karede baş pozisyonunu trailRef'e kaydeder, 500ms'den eski noktaları temizler. Radial gradient (amber→orange→transparent) ile yumuşak glow. VLM doğruladı: "snake is amber/gold colored and has a glow trail behind it".
+- **Yılan ölüm animasyonu** (`GameCanvas.tsx` — DeathEffectLayer): Yılan öldüğünde (wrong_letter/game_over/time_up) gövde segmentlerinden 6'şar parça dağılır. Parçacıklar yerçekimi etkisiyle düşer, rotasyon, fade-out. time_up ise amber renk, diğer ölüm ise koyu kırmızı. Yeniden başladığında otomatik temizlenir.
+- **Combo x5+ ekran flash** (`ComboFlash.tsx`): Combo 5'in katlarına ulaştığında (5, 10, 15...) tam ekran amber gradient flash + "COMBO ×5!" yazısı. Spring animasyon (scale 0.5→1.2→1), drop-shadow, glow ring. Props'tan türetilmiş görünürlük (setState-in-effect'ten kaçınılır).
+- **Kelime tamamlama harf-by-harf animasyonu** (`Overlays.tsx` — LevelCompleteOverlay): Kelimenin her harfi sırayla spring animasyonla belirir (scale 0→1, rotateY 180→0, y 20→0). Her harf 120ms gecikmeli. Emerald border + glow + shadow. Çeviri ve butonlar da kademeli belirir (kelime uzunluğuna göre hesaplanan delay). VLM doğruladı: "ADA shown in individual green letter boxes".
+- **Level transition fade** (`LevelTransition.tsx`): Level değiştiğinde (level > 1) "Bölüm N" + tier name gösteren kart 1.5s boyunca belirir ve kaybolur. Spring scale + fade. VLM doğruladı: "Bölüm 2" overlay.
+- **HUD combo renk gradyanı** (`HUD.tsx`): Combo rozeti combo seviyesine göre renk değiştirir:
+  - x2-x4: amber (normal)
+  - x5-x9: parlak amber + glow + 🔥 emoji
+  - x10+: rose + glow (en yüksek)
+  Scale pulse animasyonu (0.7→1.15→1).
+
+QA Doğrulama (agent-browser + VLM):
+- Boost trail: "snake is amber/gold colored and has a glow trail behind it" ✓ (VLM).
+- Kelime tamamlama: "ADA shown in individual green letter boxes" ✓ (VLM).
+- Level transition: "Bölüm 2" overlay ✓ (VLM).
+- Ölüm efekti: engine durumu doğrulandı (game_over + wall_collision), parçacıklar kodda mevcut.
+- Combo flash: combo % 5 === 0 && combo >= 5 koşulu ile tetiklenir.
+- Lint: ESLint temiz (0 error, 0 warning) — ComboFlash'ta setState-in-effect ve refs-during-render lint hataları render-derived visibility pattern ile çözüldü.
+- Dev server: 3000 portunda çalışıyor.
+
+Stage Summary:
+- Yılan boost halindeyken amber iz bırakıyor — görsel hareket hissi güçlendi.
+- Ölüm anında yılan parçalanıyor — darbe hissi arttı.
+- Combo x5+ ekran flash + "COMBO ×5!" yazısı — yüksek combo ödüllendiriliyor.
+- Kelime tamamlamada harfler sırayla beliriyor — kutlama hissi güçlendi.
+- Level geçişinde "Bölüm N" kartı — ilerleme hissi netleşti.
+- HUD combo rozeti combo seviyesine göre renk değiştiriyor (amber→rose).
+
+Unresolved issues / risks:
+- Godot projesi güncellenmedi (yalnızca web sürümü).
+- Ölüm efekti game over overlay'i açıldığında kısmen gizleniyor — z-index ayarlanabilir.
+- Combo flash çok kısa (1.2s) — dikkat dağıtmamak için kısa tutuldu.
+- Level transition her level değişiminde gösteriliyor — çok sık olabilir.
+
+Sonraki tur için öneriler:
+1. Godot projesini güncelle (trail, ölüm, combo flash, harf animasyon).
+2. Daha fazla TR→EN çevirisi ekle.
+3. Kelime kategorisi başına ilerleme takibi.
+4. Haftalık istatistik özeti (Settings'de grafik).
+5. Ses ayarları için volume slider.
+6. Yılan skin seçimi (farklı renk temaları).
+7. Achievement/başarım sistemi (ilk kelime, 10 combo, 1000 puan vb.).
+8. Pause menüsünde istatistik özeti.

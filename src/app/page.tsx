@@ -16,6 +16,8 @@ import { FloatingFeedback } from "@/components/game/FloatingFeedback";
 import { TouchControls } from "@/components/game/TouchControls";
 import { ConfettiBurst } from "@/components/game/ConfettiBurst";
 import { SettingsDialog } from "@/components/game/SettingsDialog";
+import { ComboFlash } from "@/components/game/ComboFlash";
+import { LevelTransition } from "@/components/game/LevelTransition";
 import { useSwipe } from "@/components/game/useSwipe";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -165,6 +167,8 @@ export default function Home() {
             <GameCanvas snapshot={snapshot} nextTargetChar={nextTargetChar} />
             <FloatingFeedback snapshot={snapshot} />
             <ConfettiBurst trigger={game.confettiTrigger} wordLength={snapshot.targetWord.length || 3} />
+            <ComboFlash combo={snapshot.combo} status={snapshot.status} />
+            <LevelTransition level={snapshot.level} tierName={snapshot.tierName} status={snapshot.status} />
             <Overlays
               snapshot={snapshot}
               nextTargetChar={nextTargetChar}

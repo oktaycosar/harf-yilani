@@ -95,8 +95,196 @@ export function GameCanvas({ snapshot, nextTargetChar }: Props) {
   return (
     <div ref={wrapRef} className="relative h-full w-full">
       <canvas ref={canvasRef} className="block h-full w-full rounded-xl" />
+      <BoostTrailLayer snapshot={snapshot} />
       <EatEffectsLayer effectsRef={effectsRef} snapshot={snapshot} />
+      <DeathEffectLayer snapshot={snapshot} />
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Boost trail katmanı — yılan boost halindeyken amber iz bırakır
+// ----------------------------------------------------------------------------
+function BoostTrailLayer({ snapshot }: { snapshot: GameSnapshot }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const trailRef = useRef<Array<{ x: number; y: number; t: number }>>([]);
+
+  useEffect(() => {
+    const render = () => {
+      const canvas = canvasRef.current;
+      const mainCanvas = document.querySelector<HTMLCanvasElement>(".block.h-full.w-full.rounded-xl");
+      if (canvas && mainCanvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const w = mainCanvas.clientWidth;
+          const h = mainCanvas.clientHeight;
+          if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.width = `${w}px`;
+            canvas.style.height = `${h}px`;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          }
+          ctx.clearRect(0, 0, w, h);
+
+          const boosted = snapshot.boostRemainingMs > 0;
+          const cell = Math.min(w / GRID_COLS, h / GRID_ROWS);
+          const offX = (w - cell * GRID_COLS) / 2;
+          const offY = (h - cell * GRID_ROWS) / 2;
+          const now = performance.now();
+
+          if (boosted && snapshot.status === "playing" && snapshot.snake[0]) {
+            const head = snapshot.snake[0];
+            trailRef.current.push({
+              x: offX + head.x * cell + cell / 2,
+              y: offY + head.y * cell + cell / 2,
+              t: now,
+            });
+          }
+
+          // Eski trail noktalarını temizle (500ms'den eski)
+          const TRAIL_LIFE = 500;
+          trailRef.current = trailRef.current.filter((p) => now - p.t < TRAIL_LIFE);
+
+          for (const p of trailRef.current) {
+            const age = (now - p.t) / TRAIL_LIFE;
+            const alpha = (1 - age) * 0.4;
+            const r = cell * 0.35 * (1 - age * 0.5);
+            if (alpha <= 0 || r <= 0) continue;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+            grad.addColorStop(0, "rgba(251, 191, 36, 0.6)");
+            grad.addColorStop(0.5, "rgba(245, 158, 11, 0.3)");
+            grad.addColorStop(1, "rgba(180, 83, 9, 0)");
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(render);
+    };
+    rafRef.current = requestAnimationFrame(render);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [snapshot]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
+    />
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Ölüm efekti katmanı — yılan öldüğünde gövde segmentleri dağılır
+// ----------------------------------------------------------------------------
+function DeathEffectLayer({ snapshot }: { snapshot: GameSnapshot }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const particlesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; color: string; life: number; size: number; rot: number; vrot: number }>>([]);
+  const triggeredRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const render = () => {
+      const canvas = canvasRef.current;
+      const mainCanvas = document.querySelector<HTMLCanvasElement>(".block.h-full.w-full.rounded-xl");
+      if (canvas && mainCanvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const w = mainCanvas.clientWidth;
+          const h = mainCanvas.clientHeight;
+          if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.width = `${w}px`;
+            canvas.style.height = `${h}px`;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          }
+          ctx.clearRect(0, 0, w, h);
+
+          const cell = Math.min(w / GRID_COLS, h / GRID_ROWS);
+          const offX = (w - cell * GRID_COLS) / 2;
+          const offY = (h - cell * GRID_ROWS) / 2;
+
+          const isDead = snapshot.status === "wrong_letter" || snapshot.status === "game_over" || snapshot.status === "time_up";
+
+          // Ölüm tetiklenince parçacıkları oluştur
+          if (isDead && !triggeredRef.current && snapshot.snake.length > 0) {
+            triggeredRef.current = true;
+            const ev = snapshot.lastEvent;
+            const isTimeUp = ev.kind === "time_up" || snapshot.status === "time_up";
+            for (const seg of snapshot.snake) {
+              const cx = offX + seg.x * cell + cell / 2;
+              const cy = offY + seg.y * cell + cell / 2;
+              for (let i = 0; i < 6; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 2 + Math.random() * 5;
+                particlesRef.current.push({
+                  x: cx,
+                  y: cy,
+                  vx: Math.cos(angle) * speed,
+                  vy: Math.sin(angle) * speed - 1,
+                  color: isTimeUp ? "#b45309" : "#7f1d1d",
+                  life: 1,
+                  size: cell * (0.15 + Math.random() * 0.2),
+                  rot: Math.random() * Math.PI * 2,
+                  vrot: (Math.random() - 0.5) * 0.4,
+                });
+              }
+            }
+          }
+
+          // Yeniden başladığında sıfırla
+          if (!isDead && triggeredRef.current) {
+            triggeredRef.current = false;
+            particlesRef.current = [];
+          }
+
+          // Parçacıkları çiz ve güncelle
+          const gravity = 0.3;
+          for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+            const p = particlesRef.current[i];
+            p.vy += gravity;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.rot += p.vrot;
+            p.life -= 0.012;
+            if (p.life <= 0 || p.y > h + 20) {
+              particlesRef.current.splice(i, 1);
+              continue;
+            }
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.globalAlpha = Math.max(0, p.life);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+            ctx.restore();
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(render);
+    };
+    rafRef.current = requestAnimationFrame(render);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [snapshot]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="pointer-events-none absolute inset-0 z-15 h-full w-full"
+    />
   );
 }
 

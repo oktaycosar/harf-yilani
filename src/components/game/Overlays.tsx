@@ -265,6 +265,7 @@ function GameOverOverlay({ snapshot, onBackToMenu, stats, isNewBest }: Props) {
 
 function LevelCompleteOverlay({ snapshot, onContinue, showTranslation, ttsEnabled, onSpeakWord }: Props) {
   const translation = showTranslation ? getTranslation(snapshot.targetWord) : null;
+  const word = snapshot.targetWord;
   return (
     <Shell tone="emerald" key={`lc-${snapshot.level}`}>
       <div className="text-center">
@@ -277,20 +278,43 @@ function LevelCompleteOverlay({ snapshot, onContinue, showTranslation, ttsEnable
           <CheckCircle2 className="h-9 w-9 text-emerald-400" />
         </motion.div>
         <h2 className="text-2xl font-extrabold text-white">Kelime Tamamlandı!</h2>
-        <p className="mt-1 text-lg font-bold text-emerald-300">{snapshot.targetWord}</p>
+        {/* Harf-by-harf animasyonlu kelime gösterimi */}
+        <div className="mt-2 flex justify-center gap-1">
+          {word.split("").map((ch, i) => (
+            <motion.span
+              key={i}
+              initial={{ scale: 0, opacity: 0, y: 20, rotateY: 180 }}
+              animate={{ scale: 1, opacity: 1, y: 0, rotateY: 0 }}
+              transition={{
+                delay: 0.15 + i * 0.12,
+                type: "spring",
+                stiffness: 260,
+                damping: 16,
+              }}
+              className="flex h-12 w-10 items-center justify-center rounded-lg border-2 border-emerald-500/50 bg-emerald-500/20 text-2xl font-extrabold text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.4)]"
+            >
+              {ch}
+            </motion.span>
+          ))}
+        </div>
         {translation && (
           <motion.p
             initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="mt-1 text-sm text-slate-400"
+            transition={{ delay: 0.15 + word.length * 0.12 + 0.1 }}
+            className="mt-2 text-sm text-slate-400"
           >
             <span className="text-slate-500">İngilizce: </span>
             <span className="font-semibold text-sky-300">{translation}</span>
           </motion.p>
         )}
         <p className="mt-1 text-xs text-slate-400">+50 bonus • Bölüm {snapshot.level} bitti</p>
-        <div className="mt-5 flex gap-2">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 + word.length * 0.12 + 0.3 }}
+          className="mt-5 flex gap-2"
+        >
           {ttsEnabled && (
             <Button
               onClick={() => onSpeakWord(snapshot.targetWord)}
@@ -304,7 +328,7 @@ function LevelCompleteOverlay({ snapshot, onContinue, showTranslation, ttsEnable
           <Button onClick={onContinue} size="lg" variant="outline" className={cn("border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10", ttsEnabled ? "flex-1" : "w-full")}>
             <ChevronRight className="mr-2 h-4 w-4" /> Sonraki Bölüm
           </Button>
-        </div>
+        </motion.div>
       </div>
     </Shell>
   );
