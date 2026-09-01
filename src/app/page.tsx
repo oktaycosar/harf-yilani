@@ -7,7 +7,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from "react";
-import { Gamepad2, Pause, Play, Volume2, VolumeX, Trophy } from "lucide-react";
+import { Gamepad2, Pause, Play, Volume2, VolumeX, Trophy, MessageCircle } from "lucide-react";
 import { useSnakeGame } from "@/components/game/useSnakeGame";
 import { GameCanvas } from "@/components/game/GameCanvas";
 import { HUD } from "@/components/game/HUD";
@@ -121,6 +121,21 @@ export default function Home() {
             >
               {game.soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={game.toggleTTS}
+              aria-label={game.ttsEnabled ? "Sesli okumayı kapat" : "Sesli okumayı aç"}
+              title={game.ttsEnabled ? "Sesli okuma açık" : "Sesli okuma kapalı"}
+              className={cn(
+                "transition-colors",
+                game.ttsEnabled
+                  ? "text-sky-400 hover:bg-sky-500/10"
+                  : "text-slate-500 hover:bg-slate-800"
+              )}
+            >
+              <MessageCircle className="h-4 w-4" />
+            </Button>
             <SettingsDialog
               stats={game.stats}
               soundEnabled={game.soundEnabled}
@@ -149,7 +164,7 @@ export default function Home() {
           >
             <GameCanvas snapshot={snapshot} nextTargetChar={nextTargetChar} />
             <FloatingFeedback snapshot={snapshot} />
-            <ConfettiBurst trigger={game.confettiTrigger} />
+            <ConfettiBurst trigger={game.confettiTrigger} wordLength={snapshot.targetWord.length || 3} />
             <Overlays
               snapshot={snapshot}
               nextTargetChar={nextTargetChar}
@@ -167,6 +182,11 @@ export default function Home() {
               onContinue={game.nextLevel}
               onBackToMenu={game.backToMenu}
               onResume={game.resume}
+              ttsEnabled={game.ttsEnabled}
+              onToggleTTS={game.toggleTTS}
+              onSpeakWord={(word) => {
+                import("@/lib/game/tts").then(({ TTSManager }) => TTSManager.speak(word));
+              }}
             />
           </div>
 

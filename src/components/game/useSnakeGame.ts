@@ -21,6 +21,7 @@ import {
 import type { GameSnapshot } from "@/lib/game/types";
 import type { Category } from "@/lib/game/wordDatabase";
 import { SoundManager, type SfxName } from "@/lib/game/sound";
+import { TTSManager } from "@/lib/game/tts";
 import { getDailyWord, markDailyCompleted } from "@/lib/game/translations";
 import {
   loadStats,
@@ -66,6 +67,9 @@ export interface UseSnakeGameApi {
   toggleEasyMode: () => void;
   /** Günlük challenge başlat */
   startDaily: () => void;
+  /** TTS sesli okuma açık mı */
+  ttsEnabled: boolean;
+  toggleTTS: () => void;
 }
 
 export function useSnakeGame(): UseSnakeGameApi {
@@ -78,6 +82,7 @@ export function useSnakeGame(): UseSnakeGameApi {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(() => loadLeaderboard());
   const [showTranslation, setShowTranslation] = useState<boolean>(false);
   const [easyMode, setEasyMode] = useState<boolean>(false);
+  const [ttsEnabled, setTtsEnabled] = useState<boolean>(true);
   const isDailyModeRef = useRef<boolean>(false);
 
   const recentWordsRef = useRef<string[]>([]);
@@ -92,6 +97,7 @@ export function useSnakeGame(): UseSnakeGameApi {
   const soundEnabledRef = useRef<boolean>(soundEnabled);
   const categoryRef = useRef<Category>(category);
   const easyModeRef = useRef<boolean>(easyMode);
+  const ttsEnabledRef = useRef<boolean>(ttsEnabled);
   useEffect(() => {
     statsRef.current = stats;
   }, [stats]);
@@ -104,6 +110,10 @@ export function useSnakeGame(): UseSnakeGameApi {
   useEffect(() => {
     easyModeRef.current = easyMode;
   }, [easyMode]);
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+    TTSManager.setEnabled(ttsEnabled);
+  }, [ttsEnabled]);
 
   // İlk yüklemede SoundManager'ı senkronize et
   useEffect(() => {
@@ -210,6 +220,12 @@ export function useSnakeGame(): UseSnakeGameApi {
             playSfx("word_complete");
             wordsCompletedThisRunRef.current += 1;
             setConfettiTrigger((c) => c + 1);
+            // TTS: kelimeyi Türkçe seslendir (sfx'ten 600ms sonra)
+            if (ttsEnabledRef.current) {
+              setTimeout(() => {
+                if (ttsEnabledRef.current) TTSManager.speak(s.targetWord);
+              }, 600);
+            }
             // Günlük modda tamamlama işaretle
             if (isDailyModeRef.current) {
               markDailyCompleted();
@@ -398,6 +414,15 @@ export function useSnakeGame(): UseSnakeGameApi {
     setEasyMode((prev) => !prev);
   }, []);
 
+  const toggleTTS = useCallback(() => {
+    setTtsEnabled((prev) => {
+      const next = !prev;
+      TTSManager.setEnabled(next);
+      if (!next) TTSManager.stop();
+      return next;
+    });
+  }, []);
+
   // Ref tabanlı aksiyonlar (klavye handler'ı stale closure yaşamaz)
   const actionsRef = useRef({
     startGame: () => {},
@@ -490,5 +515,7 @@ export function useSnakeGame(): UseSnakeGameApi {
     easyMode,
     toggleEasyMode,
     startDaily,
+    ttsEnabled,
+    toggleTTS,
   };
 }

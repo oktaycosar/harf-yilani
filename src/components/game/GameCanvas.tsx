@@ -72,10 +72,120 @@ export function GameCanvas({ snapshot, nextTargetChar }: Props) {
     };
   }, [snapshot, nextTargetChar]);
 
+  // Harf yeme efekti parçacıkları (canvas üzerinde transient)
+  const effectsRef = useRef<Array<{ x: number; y: number; t: number; color: string }>>([]);
+
+  // Yeni harf/bonus yeme olayı tespiti → efekt parçacığı ekle
+  useEffect(() => {
+    const ev = snapshot.lastEvent;
+    if (ev.kind === "ate_correct" || ev.kind === "ate_bonus" || ev.kind === "word_complete") {
+      // Yılan başı pozisyonunda sparkle efekti
+      const head = snapshot.snake[0];
+      if (head) {
+        effectsRef.current.push({
+          x: head.x,
+          y: head.y,
+          t: performance.now(),
+          color: ev.kind === "ate_wrong" ? "#f87171" : ev.kind === "ate_bonus" ? "#a855f7" : "#fbbf24",
+        });
+      }
+    }
+  }, [snapshot.lastEvent, snapshot.snake]);
+
   return (
     <div ref={wrapRef} className="relative h-full w-full">
       <canvas ref={canvasRef} className="block h-full w-full rounded-xl" />
+      <EatEffectsLayer effectsRef={effectsRef} snapshot={snapshot} />
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Harf yeme efekti katmanı — yılan başında kısa sparkle patlaması
+// ----------------------------------------------------------------------------
+function EatEffectsLayer({
+  effectsRef,
+  snapshot,
+}: {
+  effectsRef: React.RefObject<Array<{ x: number; y: number; t: number; color: string }>>;
+  snapshot: GameSnapshot;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const render = () => {
+      const canvas = canvasRef.current;
+      const mainCanvas = document.querySelector<HTMLCanvasElement>(".block.h-full.w-full.rounded-xl");
+      if (canvas && mainCanvas) {
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const w = mainCanvas.clientWidth;
+          const h = mainCanvas.clientHeight;
+          if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.width = `${w}px`;
+            canvas.style.height = `${h}px`;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          }
+          ctx.clearRect(0, 0, w, h);
+          const cell = Math.min(w / GRID_COLS, h / GRID_ROWS);
+          const offX = (w - cell * GRID_COLS) / 2;
+          const offY = (h - cell * GRID_ROWS) / 2;
+          const now = performance.now();
+          const DURATION = 600;
+          const effects = effectsRef.current;
+          for (let i = effects.length - 1; i >= 0; i--) {
+            const e = effects[i];
+            const elapsed = now - e.t;
+            if (elapsed > DURATION) {
+              effects.splice(i, 1);
+              continue;
+            }
+            const progress = elapsed / DURATION;
+            const cx = offX + e.x * cell + cell / 2;
+            const cy = offY + e.y * cell + cell / 2;
+            // Genişleyen halka
+            const ringR = cell * 0.3 + progress * cell * 0.8;
+            ctx.save();
+            ctx.globalAlpha = 1 - progress;
+            ctx.strokeStyle = e.color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+            ctx.stroke();
+            // Sparkle parçacıkları (8 yönde)
+            for (let s = 0; s < 8; s++) {
+              const angle = (s / 8) * Math.PI * 2;
+              const dist = progress * cell * 0.6;
+              const sx = cx + Math.cos(angle) * dist;
+              const sy = cy + Math.sin(angle) * dist;
+              const sr = (1 - progress) * cell * 0.08;
+              ctx.fillStyle = e.color;
+              ctx.globalAlpha = (1 - progress) * 0.9;
+              ctx.beginPath();
+              ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+        }
+      }
+      rafRef.current = requestAnimationFrame(render);
+    };
+    rafRef.current = requestAnimationFrame(render);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [effectsRef, snapshot]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="pointer-events-none absolute inset-0 z-10 h-full w-full"
+    />
   );
 }
 
@@ -99,7 +209,7 @@ function draw(
 
   // Arka plan
   ctx.clearRect(0, 0, w, h);
-  drawBoardBg(ctx, offX, offY, boardW, boardH, cell);
+  drawBoardBg(ctx, offX, offY, boardW, boardH, cell, s);
 
   // Izgara çizgileri (hafif)
   drawGrid(ctx, offX, offY, cell);
@@ -165,8 +275,27 @@ function drawBoardBg(
   y: number,
   w: number,
   h: number,
-  cell: number
+  cell: number,
+  s: GameSnapshot
 ) {
+  // Duruma göre kenar rengi
+  let borderColor = "rgba(148, 163, 184, 0.25)";
+  let glowColor = "rgba(16, 185, 129, 0.15)";
+  if (s.boostRemainingMs > 0) {
+    borderColor = "rgba(251, 191, 36, 0.5)";
+    glowColor = "rgba(251, 191, 36, 0.25)";
+  } else if (s.activeSpeedMultiplier < 1) {
+    borderColor = "rgba(56, 189, 248, 0.5)";
+    glowColor = "rgba(56, 189, 248, 0.2)";
+  } else if (s.timeLimitMs > 0 && s.timeRemainingMs <= 5000) {
+    borderColor = "rgba(244, 63, 94, 0.5)";
+    glowColor = "rgba(244, 63, 94, 0.2)";
+  }
+
+  // Dış glow
+  ctx.save();
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 20;
   // Yumuşak gradient tahta
   const g = ctx.createLinearGradient(x, y, x, y + h);
   g.addColorStop(0, "#0f172a");
@@ -174,10 +303,12 @@ function drawBoardBg(
   ctx.fillStyle = g;
   roundRect(ctx, x, y, w, h, Math.min(16, cell / 2));
   ctx.fill();
+  ctx.restore();
 
   // Kenarlık
   ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(148, 163, 184, 0.25)";
+  ctx.strokeStyle = borderColor;
+  roundRect(ctx, x, y, w, h, Math.min(16, cell / 2));
   ctx.stroke();
 }
 
@@ -557,25 +688,91 @@ function drawSnake(
     ctx.stroke();
   }
 
-  // Baş detayları (gözler)
+  // Baş detayları: gözler + yön işareti + dil
   const head = body[0];
   const hx = offX + head.x * cell + cell / 2;
   const hy = offY + head.y * cell + cell / 2;
-  const eyeOffset = cell * 0.13;
-  const eyeR = cell * 0.07;
+  const eyeOffset = cell * 0.14;
+  const eyeR = cell * 0.085;
   const dir = s.direction;
   const ex1 = hx + (dir === "left" ? -eyeOffset : dir === "right" ? eyeOffset : -eyeOffset * 0.6);
   const ey1 = hy + (dir === "up" ? -eyeOffset : dir === "down" ? eyeOffset : -eyeOffset * 0.6);
   const ex2 = hx + (dir === "left" ? -eyeOffset : dir === "right" ? eyeOffset : eyeOffset * 0.6);
   const ey2 = hy + (dir === "up" ? -eyeOffset : dir === "down" ? eyeOffset : -eyeOffset * 0.6);
 
+  // Yön oku (başın önünde küçük üçgen — hareket yönünü gösterir)
+  if (!dead) {
+    ctx.save();
+    ctx.fillStyle = boosted ? "rgba(254, 243, 199, 0.9)" : "rgba(255, 255, 255, 0.7)";
+    const arrowSize = cell * 0.14;
+    const arrowDist = cell * 0.36;
+    const ax = hx + (dir === "left" ? -arrowDist : dir === "right" ? arrowDist : 0);
+    const ay = hy + (dir === "up" ? -arrowDist : dir === "down" ? arrowDist : 0);
+    ctx.translate(ax, ay);
+    const angle = dir === "right" ? 0 : dir === "down" ? Math.PI / 2 : dir === "left" ? Math.PI : -Math.PI / 2;
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(arrowSize, 0);
+    ctx.lineTo(-arrowSize * 0.5, -arrowSize * 0.7);
+    ctx.lineTo(-arrowSize * 0.5, arrowSize * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Göz kırpma animasyonu (her ~4 saniye kısa kırpma)
+  const blinkCycle = (time * 1000) % 4000;
+  const isBlinking = !dead && !celebrate && blinkCycle < 120;
+
   ctx.fillStyle = "#ffffff";
-  ctx.beginPath(); ctx.arc(ex1, ey1, eyeR, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(ex2, ey2, eyeR, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = dead ? "#7f1d1d" : "#0f172a";
-  const pupilR = eyeR * 0.55;
-  ctx.beginPath(); ctx.arc(ex1, ey1, pupilR, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(ex2, ey2, pupilR, 0, Math.PI * 2); ctx.fill();
+  if (!isBlinking) {
+    ctx.beginPath(); ctx.arc(ex1, ey1, eyeR, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex2, ey2, eyeR, 0, Math.PI * 2); ctx.fill();
+    // Pupil — hareket yönüne kayar
+    const pupilR = eyeR * 0.55;
+    const pupilShift = eyeR * 0.25;
+    const px = (dir === "left" ? -pupilShift : dir === "right" ? pupilShift : 0);
+    const py = (dir === "up" ? -pupilShift : dir === "down" ? pupilShift : 0);
+    ctx.fillStyle = dead ? "#7f1d1d" : "#0f172a";
+    ctx.beginPath(); ctx.arc(ex1 + px, ey1 + py, pupilR, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex2 + px, ey2 + py, pupilR, 0, Math.PI * 2); ctx.fill();
+    // Göz parıltısı
+    ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+    ctx.beginPath(); ctx.arc(ex1 + px - pupilR * 0.3, ey1 + py - pupilR * 0.3, pupilR * 0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex2 + px - pupilR * 0.3, ey2 + py - pupilR * 0.3, pupilR * 0.35, 0, Math.PI * 2); ctx.fill();
+  } else {
+    // Kırpma: yatay çizgi
+    ctx.strokeStyle = dead ? "#7f1d1d" : "#0f172a";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ex1 - eyeR, ey1); ctx.lineTo(ex1 + eyeR, ey1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ex2 - eyeR, ey2); ctx.lineTo(ex2 + eyeR, ey2); ctx.stroke();
+  }
+
+  // Dil (önde, hareket yönüne doğru) — normal hızda sarkar
+  if (!dead && !celebrate && !isBlinking) {
+    ctx.save();
+    ctx.fillStyle = "#f43f5e";
+    const tongueLen = cell * 0.25;
+    const tongueW = cell * 0.04;
+    const tx = hx + (dir === "left" ? -cell * 0.3 : dir === "right" ? cell * 0.3 : 0);
+    const ty = hy + (dir === "up" ? -cell * 0.3 : dir === "down" ? cell * 0.3 : 0);
+    const wag = Math.sin(time * 8) * cell * 0.04;
+    ctx.translate(tx, ty);
+    const angle = dir === "right" ? 0 : dir === "down" ? Math.PI / 2 : dir === "left" ? Math.PI : -Math.PI / 2;
+    ctx.rotate(angle);
+    // Dil gövdesi
+    ctx.fillRect(0, -tongueW / 2, tongueLen, tongueW);
+    // Çatal
+    ctx.beginPath();
+    ctx.moveTo(tongueLen, -tongueW);
+    ctx.lineTo(tongueLen + cell * 0.06 + wag, -tongueW * 0.3);
+    ctx.lineTo(tongueLen, 0);
+    ctx.lineTo(tongueLen + cell * 0.06 - wag, tongueW * 0.3);
+    ctx.lineTo(tongueLen, tongueW);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
 
   // Kutlama efekti: baş çevresinde parıltı
   if (celebrate) {

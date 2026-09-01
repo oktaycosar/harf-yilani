@@ -214,3 +214,69 @@ Sonraki tur için öneriler:
 6. Yılan head'e göz/yön oku ekle (VLM önerisi).
 7. Kelime tamamlandığında sesli okuma (TTS skill).
 8. Confetti efektini geliştir (kelime uzunluğuna göre).
+
+---
+Task ID: 10 (Cron turu 4 — Yılan head detayları + TTS + Gelişmiş konfeti + Harf yeme efekti + Board glow)
+Agent: webDevReview cron (Z.ai Code)
+Task: Yılan görsel iyileştirme (göz/dil/yön oku), TTS sesli okuma, gelişmiş konfeti, harf yeme particle efekti, board kenar glow
+
+Work Log:
+- **Yılan head görsel iyileştirme** (`GameCanvas.tsx`): 
+  - Yön oku: başın önünde küçük üçgen, hareket yönünü gösterir (boost halinde altın rengi).
+  - Göz kırpma animasyonu: her ~4 saniye 120ms kırpma (yatay çizgi).
+  - Pupil hareketi: göz bebekleri hareket yönüne kayar + parıltı highlight.
+  - Dil: çatal dil, hareket yönüne doğru sarkar, hafif salınım animasyonu (kırmızı).
+- **TTS sesli okuma** (`tts.ts` + `useSnakeGame.ts`): Web Speech API ile kelime tamamlandığında Türkçe seslendir. `tr-TR` dil tercihi, fallback varsayılan dil. Sfx'ten 600ms sonra konuşur (üst üste binmeyi önler). Header'da MessageCircle toggle butonu (sky rengi). LevelComplete overlay'inde "Tekrar Dinle" butonu.
+- **Gelişmiş konfeti** (`ConfettiBurst.tsx`): 
+  - Kelime uzunluğuna göre renk paleti: kısa (amber/sarı), orta (emerald+amber), uzun (mor+yeşil+amber+kırmızı).
+  - Parça sayısı kelime uzunluğuna göre artar (80-180).
+  - 3 şekil: rect, circle, star (yıldız).
+  - Glow efekti (shadowBlur) parçalarda.
+  - İki dalga: merkez patlama + 200ms sonra üstten yağmur.
+  - Süre 2.8s'ye çıktı.
+- **Harf yeme particle efekti** (`GameCanvas.tsx` — EatEffectsLayer): 
+  - Doğru harf/bonus/word_complete yendiğinde yılan başında sparkle patlaması.
+  - Genişleyen halka (ring) + 8 yönde sparkle parçacıkları.
+  - 600ms süre, renk olaya göre (amber=doğru, mor=bonus).
+  - Ayrı canvas katmanı (pointer-events-none, z-10).
+- **Board kenar glow** (`GameCanvas.tsx` — drawBoardBg): 
+  - Duruma göre dinamik kenar rengi + glow:
+    - Normal: emerald glow
+    - Boost aktif: amber glow + amber kenar
+    - Buz üzerinde: sky/mavi glow
+    - Süre <5s: rose glow
+  - shadowBlur ile yumuşak dış glow efekti.
+- **Styling polish**: Tüm görsel iyileştirmeler mevcut temiz mimariye entegre edildi.
+
+QA Doğrulama (agent-browser + VLM + deterministik engine test):
+- Menü/header: **9/10** polish (VLM) — TTS toggle butonu (MessageCircle) header'da ✓.
+- Yılan head: yön oku ✓ (VLM doğruladı "direction arrow in front of the head").
+- Harf yeme efekti: ate_correct olayında "yellow/amber sparkle ring effect around the snake's head" ✓ (VLM doğruladı).
+- Kelime tamamlama: "Kelime Tamamlandı!" overlay + "Tekrar Dinle" butonu + konfeti ✓ (VLM "yes, yes, yes").
+- TTS: SpeechSynthesis API available=true ✓. Türkçe ses 0 (tarayıcı bağımlı), fallback ile çalışır.
+- Board glow: boost aktifken amber glow (engine durumu mult=1.8 ile doğrulandı).
+- Lint: ESLint temiz (0 error, 0 warning).
+- Dev server: 3000 portunda çalışıyor.
+
+Stage Summary:
+- Yılan artık göz kırpıyor, dil çıkarıyor, yön oku gösteriyor — canlı bir karakter hissi.
+- TTS ile kelime tamamlandığında Türkçe telaffuz otomatik + "Tekrar Dinle" butonu.
+- Konfeti kelime uzunluğuna göre renk/şekil/sayı değiştiriyor (3 dalga: patlama + yağmur + yıldız).
+- Harf yeme efekti her doğru/bonus harfte sparkle patlaması.
+- Board kenarı duruma göre glow değiştiriyor (boost/ice/time-low).
+
+Unresolved issues / risks:
+- Godot projesi güncellenmedi (yalnızca web sürümü).
+- TTS Türkçe ses tarayıcı bağımlı — bazı tarayıcılarda Türkçe ses olmayabilir, fallback varsayılan dil kullanır.
+- Yılan head detayları küçük ekranlarda zor görünebilir.
+- Harf yeme efekti çok kısa (600ms) — daha uzun olabilir ama dikkat dağıtmamak için kısa tutuldu.
+
+Sonraki tur için öneriler:
+1. Godot projesini güncelle (yılan head detayları, TTS, konfeti, efektler).
+2. Daha fazla TR→EN çevirisi ekle.
+3. Kelime tamamlandığında harf-by-harf animasyon (her harf sırayla belirir).
+4. Boost halinde yılan iz bırakması (trail effect).
+5. Yılan ölüm animasyonu (parçalanma efekti).
+6. Comboboard x5+ için özel görsel efekt (ekran flash).
+7. Kelime kategorisi başına ilerleme takibi (her kategori %100).
+8. Haftalık istatistik özeti (Settings dialog'da grafik).

@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { motion, AnimatePresence } from "framer-motion";
-import { Gamepad2, RotateCcw, Play, ChevronRight, HeartCrack, CheckCircle2, AlertTriangle, Pause, Trophy, Timer, Zap, Snowflake, CalendarClock, Baby } from "lucide-react";
+import { Gamepad2, RotateCcw, Play, ChevronRight, HeartCrack, CheckCircle2, AlertTriangle, Pause, Trophy, Timer, Zap, Snowflake, CalendarClock, Baby, Volume2 } from "lucide-react";
 import type { GameSnapshot } from "@/lib/game/types";
 import type { GameStats } from "@/lib/game/storage";
 import { CATEGORIES, type Category } from "@/lib/game/wordDatabase";
@@ -31,6 +31,9 @@ interface Props {
   onContinue: () => void;
   onBackToMenu: () => void;
   onResume: () => void;
+  ttsEnabled: boolean;
+  onToggleTTS: () => void;
+  onSpeakWord: (word: string) => void;
 }
 
 export function Overlays(props: Props) {
@@ -260,7 +263,7 @@ function GameOverOverlay({ snapshot, onBackToMenu, stats, isNewBest }: Props) {
   );
 }
 
-function LevelCompleteOverlay({ snapshot, onContinue, showTranslation }: Props) {
+function LevelCompleteOverlay({ snapshot, onContinue, showTranslation, ttsEnabled, onSpeakWord }: Props) {
   const translation = showTranslation ? getTranslation(snapshot.targetWord) : null;
   return (
     <Shell tone="emerald" key={`lc-${snapshot.level}`}>
@@ -287,9 +290,21 @@ function LevelCompleteOverlay({ snapshot, onContinue, showTranslation }: Props) 
           </motion.p>
         )}
         <p className="mt-1 text-xs text-slate-400">+50 bonus • Bölüm {snapshot.level} bitti</p>
-        <Button onClick={onContinue} size="lg" variant="outline" className="mt-5 w-full border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10">
-          <ChevronRight className="mr-2 h-4 w-4" /> Sonraki Bölüm
-        </Button>
+        <div className="mt-5 flex gap-2">
+          {ttsEnabled && (
+            <Button
+              onClick={() => onSpeakWord(snapshot.targetWord)}
+              size="lg"
+              variant="outline"
+              className="flex-1 border-sky-500/40 text-sky-300 hover:bg-sky-500/10"
+            >
+              <Volume2 className="mr-2 h-4 w-4" /> Tekrar Dinle
+            </Button>
+          )}
+          <Button onClick={onContinue} size="lg" variant="outline" className={cn("border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10", ttsEnabled ? "flex-1" : "w-full")}>
+            <ChevronRight className="mr-2 h-4 w-4" /> Sonraki Bölüm
+          </Button>
+        </div>
       </div>
     </Shell>
   );
