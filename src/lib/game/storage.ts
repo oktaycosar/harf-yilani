@@ -378,3 +378,86 @@ function readWeeklyMap(): Record<string, { gamesPlayed: number; score: number }>
     return {};
   }
 }
+
+// ---------------------------------------------------------------------------
+// Haftalık hedef sistemi — haftada 5 oyun oyna → bonus
+// ---------------------------------------------------------------------------
+
+const WEEKLY_GOAL_KEY = "harf-yilani-weekly-goal-v1";
+export const WEEKLY_GOAL_TARGET = 5;
+export const WEEKLY_GOAL_BONUS = 100;
+
+export interface WeeklyGoalState {
+  /** Bu haftanın başlangıç tarihi (YYYY-MM-DD, Pazartesi) */
+  weekStart: string;
+  /** Bu hafta oynanan oyun sayısı */
+  gamesPlayed: number;
+  /** Hedef tamamlandı mı? */
+  completed: boolean;
+  /** Tamamlanma tarihi (epoch ms) */
+  completedAt?: number;
+}
+
+/** Bu haftanın Pazartesi gününün YYYY-MM-DD formatını döndürür. */
+function getWeekStart(d: Date = new Date()): string {
+  const date = new Date(d);
+  const day = date.getDay(); // 0=Pazar, 1=Pazartesi, ...
+  const diff = day === 0 ? -6 : 1 - day; // Pazartesi'ye geri say
+  date.setDate(date.getDate() + diff);
+  return todayStr(date);
+}
+
+export function loadWeeklyGoal(): WeeklyGoalState {
+  if (typeof window === "undefined") {
+    return { weekStart: getWeekStart(), gamesPlayed: 0, completed: false };
+  }
+  try {
+    const raw = window.localStorage.getItem(WEEKLY_GOAL_KEY);
+    if (!raw) {
+      return { weekStart: getWeekStart(), gamesPlayed: 0, completed: false };
+    }
+    const parsed = JSON.parse(raw) as WeeklyGoalState;
+    // Hafta değiştiyse sıfırla
+    const currentWeek = getWeekStart();
+    if (parsed.weekStart !== currentWeek) {
+      return { weekStart: currentWeek, gamesPlayed: 0, completed: false };
+    }
+    return parsed;
+  } catch {
+    return { weekStart: getWeekStart(), gamesPlayed: 0, completed: false };
+  }
+}
+
+/**
+ * Bir oyun bittiğinde çağrılır. Haftalık hedef oyun sayısını artırır.
+ * Hedef tamamlandıysa (5 oyun) bonus işaretler ve true döndürür.
+ */
+export function incrementWeeklyGoal(
+  prev: WeeklyGoalState
+): { state: WeeklyGoalState; justCompleted: boolean } {
+  const currentWeek = getWeekStart();
+  // Hafta değiştiyse sıfırla
+  const state: WeeklyGoalState =
+    prev.weekStart !== currentWeek
+      ? { weekStart: currentWeek, gamesPlayed: 0, completed: false }
+      : { ...prev };
+
+  state.gamesPlayed += 1;
+
+  let justCompleted = false;
+  if (!state.completed && state.gamesPlayed >= WEEKLY_GOAL_TARGET) {
+    state.completed = true;
+    state.completedAt = Date.now();
+    justCompleted = true;
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(WEEKLY_GOAL_KEY, JSON.stringify(state));
+    } catch {
+      // yoksay
+    }
+  }
+
+  return { state, justCompleted };
+}

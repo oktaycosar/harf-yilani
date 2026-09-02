@@ -39,11 +39,16 @@ import {
   incrementCategoryProgress,
   loadWeeklyStats,
   recordGamePlay,
+  loadWeeklyGoal,
+  incrementWeeklyGoal,
+  WEEKLY_GOAL_TARGET,
+  WEEKLY_GOAL_BONUS,
   type GameStats,
   type LeaderboardEntry,
   type Achievement,
   type CategoryProgress,
   type WeeklyStatEntry,
+  type WeeklyGoalState,
 } from "@/lib/game/storage";
 import { loadSkin, saveSkin, type SnakeSkin } from "@/lib/game/snakeSkins";
 
@@ -100,6 +105,10 @@ export interface UseSnakeGameApi {
   setSkin: (id: string) => void;
   /** Haftalık istatistik (son 7 gün) */
   weeklyStats: WeeklyStatEntry[];
+  /** Haftalık hedef durumu */
+  weeklyGoal: WeeklyGoalState;
+  /** Haftalık hedef yeni tamamlandı mı (bildirim için) */
+  weeklyGoalCompleted: boolean;
 }
 
 export function useSnakeGame(): UseSnakeGameApi {
@@ -120,6 +129,8 @@ export function useSnakeGame(): UseSnakeGameApi {
   const [ttsVolume, setTtsVolumeState] = useState<number>(() => loadStats().ttsVolume);
   const [skin, setSkinState] = useState<SnakeSkin>(() => loadSkin());
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStatEntry[]>(() => loadWeeklyStats());
+  const [weeklyGoal, setWeeklyGoal] = useState<WeeklyGoalState>(() => loadWeeklyGoal());
+  const [weeklyGoalCompleted, setWeeklyGoalCompleted] = useState<boolean>(false);
   const isDailyModeRef = useRef<boolean>(false);
 
   const recentWordsRef = useRef<string[]>([]);
@@ -137,6 +148,7 @@ export function useSnakeGame(): UseSnakeGameApi {
   const easyModeRef = useRef<boolean>(easyMode);
   const ttsEnabledRef = useRef<boolean>(ttsEnabled);
   const achievementsRef = useRef<Achievement[]>(achievements);
+  const weeklyGoalRef = useRef<WeeklyGoalState>(weeklyGoal);
   useEffect(() => {
     statsRef.current = stats;
   }, [stats]);
@@ -156,6 +168,9 @@ export function useSnakeGame(): UseSnakeGameApi {
   useEffect(() => {
     achievementsRef.current = achievements;
   }, [achievements]);
+  useEffect(() => {
+    weeklyGoalRef.current = weeklyGoal;
+  }, [weeklyGoal]);
 
   // İlk yüklemede SoundManager'ı senkronize et
   useEffect(() => {
@@ -347,6 +362,14 @@ export function useSnakeGame(): UseSnakeGameApi {
         // Haftalık istatistiğe oyunu kaydet
         const newWeekly = recordGamePlay(s.score);
         setWeeklyStats(newWeekly);
+        // Haftalık hedefi güncelle
+        const goalResult = incrementWeeklyGoal(weeklyGoalRef.current);
+        weeklyGoalRef.current = goalResult.state;
+        setWeeklyGoal(goalResult.state);
+        if (goalResult.justCompleted) {
+          setWeeklyGoalCompleted(true);
+          setTimeout(() => setWeeklyGoalCompleted(false), 5000);
+        }
         // Liderlik tablosuna ekle (yalnızca skor > 0 ise)
         if (s.score > 0) {
           const entry: LeaderboardEntry = {
@@ -488,6 +511,7 @@ export function useSnakeGame(): UseSnakeGameApi {
     setAchievements(loadAchievements());
     setCategoryProgress(loadCategoryProgress());
     setWeeklyStats(loadWeeklyStats());
+    setWeeklyGoal(loadWeeklyGoal());
     setSoundVolumeState(cleared.soundVolume);
     setTtsVolumeState(cleared.ttsVolume);
   }, []);
@@ -634,5 +658,7 @@ export function useSnakeGame(): UseSnakeGameApi {
     skin,
     setSkin,
     weeklyStats,
+  weeklyGoal,
+  weeklyGoalCompleted,
   };
 }

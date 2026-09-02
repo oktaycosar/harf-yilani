@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
-import type { GameStats, LeaderboardEntry, Achievement, CategoryProgress, WeeklyStatEntry } from "@/lib/game/storage";
+import type { GameStats, LeaderboardEntry, Achievement, CategoryProgress, WeeklyStatEntry, WeeklyGoalState } from "@/lib/game/storage";
+import { WEEKLY_GOAL_TARGET, WEEKLY_GOAL_BONUS } from "@/lib/game/storage";
 import { CATEGORIES } from "@/lib/game/wordDatabase";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ interface Props {
   achievements: Achievement[];
   categoryProgress: CategoryProgress;
   weeklyStats: WeeklyStatEntry[];
+  weeklyGoal: WeeklyGoalState;
   soundVolume: number;
   ttsVolume: number;
   onToggleSound: (v: boolean) => void;
@@ -33,7 +35,7 @@ interface Props {
   onReset: () => void;
 }
 
-export function SettingsDialog({ stats, soundEnabled, leaderboard, achievements, categoryProgress, weeklyStats, soundVolume, ttsVolume, onToggleSound, onSoundVolume, onTtsVolume, onReset }: Props) {
+export function SettingsDialog({ stats, soundEnabled, leaderboard, achievements, categoryProgress, weeklyStats, weeklyGoal, soundVolume, ttsVolume, onToggleSound, onSoundVolume, onTtsVolume, onReset }: Props) {
   const [open, setOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [selectedAchievement, setSelectedAchievement] = useState<Achievement | null>(null);
@@ -309,7 +311,7 @@ export function SettingsDialog({ stats, soundEnabled, leaderboard, achievements,
 
           {/* Haftalık istatistik sekmesi */}
           <TabsContent value="weekly">
-            <WeeklyTab weeklyStats={weeklyStats} />
+            <WeeklyTab weeklyStats={weeklyStats} weeklyGoal={weeklyGoal} />
           </TabsContent>
         </Tabs>
 
@@ -326,9 +328,9 @@ export function SettingsDialog({ stats, soundEnabled, leaderboard, achievements,
 }
 
 // ----------------------------------------------------------------------------
-// WeeklyTab — Son 7 günün skorlarını basit bar chart ile gösterir
+// WeeklyTab — Son 7 günün skorlarını basit bar chart ile gösterir + haftalık hedef
 // ----------------------------------------------------------------------------
-function WeeklyTab({ weeklyStats }: { weeklyStats: WeeklyStatEntry[] }) {
+function WeeklyTab({ weeklyStats, weeklyGoal }: { weeklyStats: WeeklyStatEntry[]; weeklyGoal: WeeklyGoalState }) {
   const maxScore = Math.max(1, ...weeklyStats.map((d) => d.score));
   const totalGames = weeklyStats.reduce((sum, d) => sum + d.gamesPlayed, 0);
   const totalScore = weeklyStats.reduce((sum, d) => sum + d.score, 0);
@@ -353,8 +355,48 @@ function WeeklyTab({ weeklyStats }: { weeklyStats: WeeklyStatEntry[] }) {
     return dateStr === `${y}-${m}-${day}`;
   };
 
+  const goalProgress = Math.min(100, (weeklyGoal.gamesPlayed / WEEKLY_GOAL_TARGET) * 100);
+
   return (
     <div className="space-y-3">
+      {/* Haftalık hedef kartı */}
+      <div className={cn(
+        "rounded-xl border-2 p-3 transition-colors",
+        weeklyGoal.completed
+          ? "border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+          : "border-amber-500/40 bg-amber-500/5"
+      )}>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{weeklyGoal.completed ? "🎯" : "🔄"}</span>
+            <span className="text-sm font-bold text-slate-200">Haftalık Hedef</span>
+          </div>
+          <span className={cn(
+            "text-xs font-bold",
+            weeklyGoal.completed ? "text-emerald-300" : "text-amber-300"
+          )}>
+            {weeklyGoal.gamesPlayed} / {WEEKLY_GOAL_TARGET} oyun
+            {weeklyGoal.completed && " ✅"}
+          </span>
+        </div>
+        <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-700/50">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all",
+              weeklyGoal.completed
+                ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
+                : "bg-gradient-to-r from-amber-500 to-amber-400"
+            )}
+            style={{ width: `${goalProgress}%` }}
+          />
+        </div>
+        <div className="mt-1.5 text-[11px] text-slate-400">
+          {weeklyGoal.completed
+            ? `Tamamlandı! +${WEEKLY_GOAL_BONUS} bonus kazandın 🎉`
+            : `${WEEKLY_GOAL_TARGET - weeklyGoal.gamesPlayed} oyun daha → +${WEEKLY_GOAL_BONUS} bonus`}
+        </div>
+      </div>
+
       {/* Özet kartlar */}
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded-lg border border-slate-700/60 bg-slate-800/40 p-2.5">

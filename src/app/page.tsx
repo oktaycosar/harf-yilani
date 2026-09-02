@@ -19,6 +19,7 @@ import { SettingsDialog } from "@/components/game/SettingsDialog";
 import { ComboFlash } from "@/components/game/ComboFlash";
 import { LevelTransition } from "@/components/game/LevelTransition";
 import { AchievementNotification } from "@/components/game/AchievementNotification";
+import { WeeklyGoalNotification } from "@/components/game/WeeklyGoalNotification";
 import { useSwipe } from "@/components/game/useSwipe";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -146,6 +147,7 @@ export default function Home() {
               achievements={game.achievements}
               categoryProgress={game.categoryProgress}
               weeklyStats={game.weeklyStats}
+              weeklyGoal={game.weeklyGoal}
               soundVolume={game.soundVolume}
               ttsVolume={game.ttsVolume}
               onToggleSound={(v) => {
@@ -248,6 +250,12 @@ export default function Home() {
         onDismiss={() => {
           // Bildirimi kapat — state otomatik temizlenir
         }}
+      />
+
+      {/* ---------------------------------------------------------------- WEEKLY GOAL NOTIFICATION */}
+      <WeeklyGoalNotification
+        show={game.weeklyGoalCompleted}
+        bonus={100}
       />
 
       {/* ---------------------------------------------------------------- FOOTER */}
