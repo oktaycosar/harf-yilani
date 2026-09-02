@@ -12,6 +12,7 @@ import type { GameStats } from "@/lib/game/storage";
 import { CATEGORIES, type Category } from "@/lib/game/wordDatabase";
 import { getTranslation, getDailyWord, isDailyCompleted } from "@/lib/game/translations";
 import { SNAKE_SKINS, type SnakeSkin } from "@/lib/game/snakeSkins";
+import { SkinPreview } from "./SkinPreview";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -165,17 +166,7 @@ function MenuOverlay({ onStart, onStartDaily, stats, category, onSetCategory, sh
                       : "border-slate-700/50 bg-slate-800/40 hover:border-slate-600 hover:bg-slate-700/40"
                   )}
                 >
-                  <span className="text-lg leading-none">{s.emoji}</span>
-                  <span className="flex items-center gap-0.5">
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: s.headColor }}
-                    />
-                    <span
-                      className="h-2 w-2 rounded-full opacity-70"
-                      style={{ backgroundColor: s.tailColor }}
-                    />
-                  </span>
+                  <SkinPreview skin={s} size={44} />
                   <span className={cn("text-[9px] font-semibold leading-tight", active ? "text-emerald-200" : "text-slate-400")}>
                     {s.name}
                   </span>

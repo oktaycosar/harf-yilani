@@ -366,14 +366,25 @@ export function useSnakeGame(): UseSnakeGameApi {
         const goalResult = incrementWeeklyGoal(weeklyGoalRef.current);
         weeklyGoalRef.current = goalResult.state;
         setWeeklyGoal(goalResult.state);
+        let bonusScore = 0;
         if (goalResult.justCompleted) {
+          bonusScore = WEEKLY_GOAL_BONUS;
           setWeeklyGoalCompleted(true);
           setTimeout(() => setWeeklyGoalCompleted(false), 5000);
+          // Bonus skoru stats'a yansıt
+          const withBonus = recordGameEnd(statsRef.current, {
+            score: s.score + bonusScore,
+            level: s.level,
+            wordsCompleted: wordsCompletedThisRunRef.current,
+          });
+          statsRef.current = withBonus;
+          setStats(withBonus);
         }
-        // Liderlik tablosuna ekle (yalnızca skor > 0 ise)
-        if (s.score > 0) {
+        // Liderlik tablosuna ekle (skor + bonus dahil)
+        const finalScore = s.score + bonusScore;
+        if (finalScore > 0) {
           const entry: LeaderboardEntry = {
-            score: s.score,
+            score: finalScore,
             level: s.level,
             date: Date.now(),
             word: s.targetWord,

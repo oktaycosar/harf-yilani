@@ -20,6 +20,10 @@ export interface GameStats {
   soundEnabled: boolean;
   soundVolume: number; // 0-1
   ttsVolume: number; // 0-1
+  /** Mevcut streak (üst üste hatasız tamamlanan kelime) */
+  currentStreak: number;
+  /** En iyi streak */
+  bestStreak: number;
 }
 
 export interface LeaderboardEntry {
@@ -53,6 +57,8 @@ const DEFAULT_STATS: GameStats = {
   soundEnabled: true,
   soundVolume: 0.35,
   ttsVolume: 0.9,
+  currentStreak: 0,
+  bestStreak: 0,
 };
 
 export function loadStats(): GameStats {
@@ -81,13 +87,25 @@ export function recordGameEnd(
   prev: GameStats,
   data: { score: number; level: number; wordsCompleted: number }
 ): GameStats {
+  // Streak: bu oturumda en az 1 kelime tamamlandıysa streak artar, aksi halde sıfırlanır
+  const newStreak = data.wordsCompleted > 0 ? prev.currentStreak + 1 : 0;
   const next: GameStats = {
     ...prev,
     bestScore: Math.max(prev.bestScore, data.score),
     bestLevel: Math.max(prev.bestLevel, data.level),
     totalGames: prev.totalGames + 1,
     totalWordsCompleted: prev.totalWordsCompleted + data.wordsCompleted,
+    currentStreak: newStreak,
+    bestStreak: Math.max(prev.bestStreak, newStreak),
   };
+  saveStats(next);
+  return next;
+}
+
+/** Streak'i sıfırla (oyuncu öldüğünde ama kelime tamamlamadığında kullanılmaz —
+ *  recordGameEnd zaten wordsCompleted=0 ise streak'i sıfırlar). */
+export function resetStreak(prev: GameStats): GameStats {
+  const next = { ...prev, currentStreak: 0 };
   saveStats(next);
   return next;
 }
@@ -246,7 +264,7 @@ export function checkAchievements(
       case "words_50": shouldUnlock = stats.totalWordsCompleted >= 50; break;
       case "daily_done": shouldUnlock = extra?.dailyCompleted === true; break;
       case "booster_collect": shouldUnlock = extra?.boosterCollected === true; break;
-      case "no_death_run": shouldUnlock = stats.totalWordsCompleted >= 5; break; // basitleştirilmiş
+      case "no_death_run": shouldUnlock = stats.bestStreak >= 5; break;
     }
     if (shouldUnlock) {
       const unlocked = { ...a, unlocked: true, unlockedAt: Date.now() };

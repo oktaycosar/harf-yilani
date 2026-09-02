@@ -163,7 +163,7 @@ export default function Home() {
 
       {/* ---------------------------------------------------------------- MAIN */}
       <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col gap-3 px-3 py-4 sm:px-4 sm:py-6">
-        <HUD snapshot={snapshot} nextTargetChar={nextTargetChar} bestScore={game.stats.bestScore} />
+        <HUD snapshot={snapshot} nextTargetChar={nextTargetChar} bestScore={game.stats.bestScore} streak={game.stats.currentStreak} />
 
         {/* Oyun alanı */}
         <div className="relative mt-1 flex-1">

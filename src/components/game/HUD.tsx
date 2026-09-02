@@ -5,7 +5,7 @@
 // + kelime ilerleme çubuğu + en iyi skor rozeti
 // ============================================================================
 
-import { Heart, Sparkles, Trophy, Gauge, Timer, Boxes, Star, Zap, Snowflake } from "lucide-react";
+import { Heart, Sparkles, Trophy, Gauge, Timer, Boxes, Star, Zap, Snowflake, Flame } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { GameSnapshot } from "@/lib/game/types";
@@ -15,9 +15,10 @@ interface Props {
   snapshot: GameSnapshot;
   nextTargetChar: string | null;
   bestScore: number;
+  streak: number;
 }
 
-export function HUD({ snapshot, nextTargetChar, bestScore }: Props) {
+export function HUD({ snapshot, nextTargetChar, bestScore, streak }: Props) {
   const { level, targetWord, currentLetterIndex, score, lives, combo, tierName, stepMs } = snapshot;
   const progress = targetWord.length > 0 ? (currentLetterIndex / targetWord.length) * 100 : 0;
   const timed = snapshot.timeLimitMs > 0;
@@ -50,6 +51,7 @@ export function HUD({ snapshot, nextTargetChar, bestScore }: Props) {
         </div>
         <div className="flex items-center gap-3">
           <ScorePill score={score} bestScore={bestScore} />
+          {streak > 0 && <StreakPill streak={streak} />}
           <LivesPill lives={lives} />
         </div>
       </div>
@@ -223,6 +225,31 @@ function ScorePill({ score, bestScore }: { score: number; bestScore: number }) {
       {score}
       {isBest && <span className="text-[9px] uppercase">rekor!</span>}
     </span>
+  );
+}
+
+function StreakPill({ streak }: { streak: number }) {
+  const isHot = streak >= 3;
+  const isFire = streak >= 5;
+  return (
+    <motion.span
+      key={streak}
+      initial={{ scale: 0.7, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: "spring", stiffness: 300, damping: 18 }}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold ring-1 transition-colors",
+        isFire
+          ? "bg-orange-500/25 text-orange-200 ring-orange-400/50 shadow-[0_0_10px_rgba(249,115,22,0.4)]"
+          : isHot
+            ? "bg-amber-500/25 text-amber-100 ring-amber-400/50"
+            : "bg-slate-700/40 text-slate-300 ring-slate-600/30"
+      )}
+      title={`Üst üste ${streak} hatasız kelime`}
+    >
+      <Flame className={cn("h-3.5 w-3.5", isFire && "fill-orange-400")} />
+      {streak}
+    </motion.span>
   );
 }
 
