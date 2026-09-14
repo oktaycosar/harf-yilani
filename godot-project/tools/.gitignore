@@ -1,0 +1,7 @@
+# Ara çıktılar — scriptler bunları KENDİ yanına yazar (önizleme, dilim, pycache).
+# Gerçek oyun varlıkları ../assets/ altına gider; onlar takip edilir.
+_*/
+_*.png
+_*.json
+__pycache__/
+*.pyc

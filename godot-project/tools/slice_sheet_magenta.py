@@ -12,9 +12,9 @@ from collections import deque
 
 from PIL import Image, ImageDraw, ImageFilter
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_SHEET = os.path.join(ROOT, "snake_gorseller", "ChatGPT Image 14 Eyl 2026 19_54_42.png")
-DEFAULT_OUT = os.path.join(ROOT, "_tools", "_frame_parts")
+import _paths                                     # ortak yol çözümleyici
+DEFAULT_SHEET = _paths.sheet("ChatGPT Image 14 Eyl 2026 19_54_42.png")
+DEFAULT_OUT = os.path.join(_paths.SCRIPT_DIR, "_frame_parts")
 
 ALPHA_MIN = 16
 MIN_AREA = 200

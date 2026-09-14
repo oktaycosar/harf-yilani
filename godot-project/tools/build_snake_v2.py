@@ -24,11 +24,10 @@ import importlib.util
 import os
 from PIL import Image
 
-TOOLS = r"C:\Users\OktayC\Desktop\Harness_Genel_26\_tools"
-GAME_SNAKE = (r"C:\Users\OktayC\Desktop\Harness_Genel_26\yilan_oyunu"
-              r"\godot-project\assets\snake\snake.png")
-SRC_KIT = (r"C:\Users\OktayC\Desktop\Harness_Genel_26\snake_gorseller"
-           r"\ChatGPT Image 14 Eyl 2026 14_07_08.png")
+import _paths                                     # ortak yol çözümleyici
+TOOLS = _paths.SCRIPT_DIR
+GAME_SNAKE = _paths.SNAKE_PNG
+SRC_KIT = _paths.SOURCE_KIT
 
 spec = importlib.util.spec_from_file_location(
     "kit2", os.path.join(TOOLS, "build_snake_kit2.py"))

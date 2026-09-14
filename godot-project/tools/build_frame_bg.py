@@ -14,10 +14,10 @@ import os
 
 from PIL import Image, ImageOps
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PARTS = os.path.join(ROOT, "_tools", "_frame_parts")
-OUT = os.path.join(ROOT, "yilan_oyunu", "godot-project", "assets", "ui")
-PREV = os.path.join(ROOT, "_tools", "_frame_preview.png")
+import _paths                                     # ortak yol çözümleyici
+PARTS = os.path.join(_paths.SCRIPT_DIR, "_frame_parts")
+OUT = _paths.UI_OUT
+PREV = os.path.join(_paths.SCRIPT_DIR, "_frame_preview.png")
 
 W, H = 960, 760
 FX0, FY0, FX1, FY1 = 8, 64, 952, 756       # cerceve dis kenar

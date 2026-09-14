@@ -13,12 +13,11 @@ from PIL import Image, ImageFilter
 
 import os
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "snake_gorseller")
-OUT = os.path.join(ROOT, "yilan_oyunu", "godot-project", "assets", "ui")
+import _paths                                     # ortak yol çözümleyici
+OUT = _paths.UI_OUT
 
-SKY_SRC = os.path.join(SRC, "ChatGPT Image 14 Eyl 2026 19_15_39.png")
-GLOBE_SRC = os.path.join(SRC, "ChatGPT Image 14 Eyl 2026 19_17_27.png")
+SKY_SRC = _paths.sheet("ChatGPT Image 14 Eyl 2026 19_15_39.png")
+GLOBE_SRC = _paths.sheet("ChatGPT Image 14 Eyl 2026 19_17_27.png")
 
 SKY_W, SKY_H = 960, 760            # oyun viewport'u
 

@@ -11,9 +11,9 @@ import os
 
 from PIL import Image
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHEET = os.path.join(ROOT, "snake_gorseller", "ChatGPT Image 14 Eyl 2026 19_13_53.png")
-OUT = os.path.join(ROOT, "yilan_oyunu", "godot-project", "assets", "ui")
+import _paths                                     # ortak yol çözümleyici
+SHEET = _paths.sheet("ChatGPT Image 14 Eyl 2026 19_13_53.png")
+OUT = _paths.UI_OUT
 
 ALPHA_MIN = 16
 

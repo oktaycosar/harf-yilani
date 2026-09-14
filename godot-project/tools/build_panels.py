@@ -17,10 +17,10 @@ import statistics
 
 from PIL import Image
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHEET = os.path.join(ROOT, "snake_gorseller", "ChatGPT Image 14 Eyl 2026 19_13_53.png")
-OUT = os.path.join(ROOT, "yilan_oyunu", "godot-project", "assets", "ui")
-PREV = os.path.join(ROOT, "_tools", "_panels_preview.png")
+import _paths                                     # ortak yol çözümleyici
+SHEET = _paths.sheet("ChatGPT Image 14 Eyl 2026 19_13_53.png")
+OUT = _paths.UI_OUT
+PREV = os.path.join(_paths.SCRIPT_DIR, "_panels_preview.png")
 
 # (isim, panel dikdortgeni (x0,y0,x1,y1), ic bolge, parlaklik esigi)
 JOBS = [

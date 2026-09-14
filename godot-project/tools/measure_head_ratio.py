@@ -8,8 +8,8 @@
 import os
 from PIL import Image
 
-GAME_SNAKE = (r"C:\Users\OktayC\Desktop\Harness_Genel_26\yilan_oyunu"
-              r"\godot-project\assets\snake\snake.png")
+import _paths                                     # ortak yol çözümleyici
+GAME_SNAKE = _paths.SNAKE_PNG
 CELL, GAME, TUBE, MID = 144, 36, 30, 72
 LO, HI = MID - GAME // 2, MID + GAME // 2          # 54..90
 BAND0, BAND1 = MID - TUBE // 2, MID + TUBE // 2    # 57..87

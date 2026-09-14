@@ -24,10 +24,10 @@ from collections import Counter, deque
 
 from PIL import Image
 
-SRC = (r"C:\Users\OktayC\Desktop\Harness_Genel_26\snake_gorseller"
-       r"\ChatGPT Image 14 Eyl 2026 14_07_08.png")
-SNAKE_DIR = r"C:\Users\OktayC\Desktop\Harness_Genel_26\yilan_oyunu\godot-project\assets\snake"
-TOOLS_DIR = r"C:\Users\OktayC\Desktop\Harness_Genel_26\_tools"
+import _paths                                     # ortak yol çözümleyici
+SRC = _paths.SOURCE_KIT
+SNAKE_DIR = os.path.join(_paths.ASSETS, "snake")
+TOOLS_DIR = _paths.SCRIPT_DIR
 
 SHEET_CELL = 144          # atlas hucresi
 GAME_CELL = 36            # oyun hucresi (CELL_SIZE)

@@ -3,9 +3,24 @@
 Bu klasördeki Python scriptleri oyunun **piksel varlıklarını ve yılan atlasını**
 üretir. Hepsi Pillow kullanır (`pip install pillow`).
 
-> ⚠ **Yollar mutlak (absolute).** Scriptlerin başındaki `SRC` / `TOOLS` / `GAME_SNAKE`
-> gibi sabitler `C:\Users\OktayC\Desktop\Harness_Genel_26\...` yolunu gösterir.
-> Başka bir makinede çalıştırmadan önce bu sabitleri düzelt.
+Yollar **taşınabilir**: hiçbir script mutlak yol içermez, hepsi `_paths.py`
+üzerinden çalışır. `_paths.py` içinde `project.godot` bulunur ve yukarı doğru
+aranır; bulunamazsa `HARF_YILANI_PROJECT` ortam değişkeni kullanılır.
+
+| `_paths` sabiti | Anlamı |
+|---|---|
+| `SCRIPT_DIR` | Bu klasör — ara çıktılar (önizleme, dilim) buraya yazılır |
+| `PROJECT` | Godot projesi (`project.godot`'un bulunduğu klasör) |
+| `ASSETS` / `SNAKE_PNG` / `UI_OUT` | `assets/`, `assets/snake/snake.png`, `assets/ui` |
+| `SHEETS` | Kaynak kit sayfalarının klasörü |
+| `SOURCE_KIT` | Yılan kiti PNG'si |
+
+`SHEETS` sırası: `HARF_YILANI_SHEETS` → `tools/source/sheets/` → yukarı doğru
+`snake_gorseller` klasörü. Bu depoda kaynak sayfalar `tools/source/sheets/`
+altındadır, yani **klonlayan biri varlıkları baştan üretebilir**.
+
+> Ara çıktılar (`_*.png`, `_frame_parts/`, `__pycache__/`) `tools/.gitignore`
+> ile dışlanmıştır; oyun `assets/` klasörü takip edilir.
 
 ---
 
@@ -60,21 +75,36 @@ Oyun hücresi 36 px, oyun penceresi (hücre içi) **54..90**.
 
 ## 2) Diğer varlık üreticileri
 
+Bunların kaynağı `tools/source/sheets/` altındaki kit sayfalarıdır (AI ile
+üretilmiş 1280–1536 px sayfalar); `slice_sheet_magenta.py` gibi dilimleyiciler
+de buradan okur.
+
+Bazıları birbirine bağlıdır, **şu sırayla** çalıştırılır:
+
 | Script | Çıktı |
 |---|---|
+| `slice_sheet_magenta.py` | `_frame_parts/` — magenta zeminli sayfayı parçalara ayırır (alfa temizliği dahil) |
 | `build_frame_bg.py` | `assets/ui/frame_bg.png` — tahta çerçeve (taş bantlar, köşeler, fener, sarmaşık) |
+| `slice_sheet_cc.py` | `_sheet_parts/` — genel amaçlı dilimleyici |
 | `build_panels.py` | `assets/ui/panel_plank.png` — HUD ahşap tabela dokusu (yazısız) |
-| `build_stone_tiles2.py` | `assets/tiles/obstacle_stone.png`, `obstacle_spike.png`, `tile_bonus.png` |
-| `build_night_assets.py` | `bg_sky.png`, `globe_hud.png`, `globe_menu.png` |
-| `build_menu_decor.py` | `decor_owl.png`, `decor_books.png` |
-| `slice_sheet_magenta.py` | Magenta zeminli kit sayfalarını parçalara ayırır (alfa temizliği dahil) |
+| `build_stone_tiles2.py` | `assets/ui/obstacle_stone.png`, `obstacle_spike.png`, `tile_bonus.png` |
+| `build_night_assets.py` | `assets/ui/bg_sky.png`, `globe_hud.png`, `globe_menu.png` |
+| `build_menu_decor.py` | `assets/ui/decor_owl.png`, `decor_books.png` |
+
+> `build_frame_bg.py` **`_frame_parts/` hazır olmadan çalışmaz**; önce
+> `slice_sheet_magenta.py`. Tüm arayüz çıktıları `assets/ui/` altına yazılır
+> (ayrı bir `assets/tiles/` klasörü YOK).
 
 ---
 
 ## 3) Doğrulama
 
 ```powershell
-# Atlasi üret
+# Atlasi üret (sadece önizleme: --apply yok)
+python build_snake_v2.py
+python refine_snake.py
+
+# Oyunun atlasina YAZ
 python refine_snake.py --apply
 
 # Godot'ya içe aktart (YENİ PNG'DEN SONRA ŞART — yoksa eski .ctex çizilir)

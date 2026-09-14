@@ -27,9 +27,9 @@ import os
 import sys
 from PIL import Image
 
-TOOLS = r"C:\Users\OktayC\Desktop\Harness_Genel_26\_tools"
-GAME = (r"C:\Users\OktayC\Desktop\Harness_Genel_26\yilan_oyunu"
-        r"\godot-project\assets\snake\snake.png")
+import _paths                                     # ortak yol çözümleyici
+TOOLS = _paths.SCRIPT_DIR
+GAME = _paths.SNAKE_PNG
 GEN = os.path.join(TOOLS, "_v2b_snake.png")      # build_snake_v2.py çıktısı
 
 CELL, GAME_CELL, TUBE, MID = 144, 36, 30, 72

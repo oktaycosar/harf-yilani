@@ -16,10 +16,10 @@ import os
 
 from PIL import Image, ImageEnhance
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHEET = os.path.join(ROOT, "snake_gorseller", "ChatGPT Image 14 Eyl 2026 19_13_53.png")
-OUT = os.path.join(ROOT, "yilan_oyunu", "godot-project", "assets", "ui")
-PROBE = os.path.join(ROOT, "_tools", "_stone_probe.png")
+import _paths                                     # ortak yol çözümleyici
+SHEET = _paths.sheet("ChatGPT Image 14 Eyl 2026 19_13_53.png")
+OUT = _paths.UI_OUT
+PROBE = os.path.join(_paths.SCRIPT_DIR, "_stone_probe.png")
 
 CELL = 34
 ALPHA_MIN = 200          # "dolu tas" esigi (yumusak golgeyi disarida birakir)
