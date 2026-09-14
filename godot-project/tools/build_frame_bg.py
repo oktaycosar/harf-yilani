@@ -26,6 +26,44 @@ BAND = BX0 - FX0                            # 40
 FLOOR = (10, 24, 48)                        # mockup'tan olculen lacivert
 FLOOR_ALPHA = 214                           # ~0.84 -> arkadaki yildizlar silik gecer
 
+# --- ZEMIN DOKUSU ---------------------------------------------------------
+# Duz lacivert yerine 36px'lik tas dosemesi. Karo boyu = CELL_SIZE oldugu icin
+# doku oyun izgarasiyla BIREBIR hizalanir (tahta 864x612 = 24x17 hucre).
+# Kontrast KASITLI olarak cok dusuk: harf taslarini bastirmamali.
+FLOOR_EDGE = (6, 16, 34)                    # derz (biraz koyu)
+FLOOR_TOP = (22, 40, 72)                    # slab ust kenari (ince isik)
+FLOOR_SPECK = (16, 31, 58)                  # hafif benek / doku
+
+
+def floor_tile(cell: int = 36) -> Image.Image:
+    """Tek karo: slab + derz + ust isik + deterministik benek."""
+    im = Image.new("RGBA", (cell, cell), (0, 0, 0, 0))
+    px = im.load()
+    for y in range(cell):
+        for x in range(cell):
+            if x == 0 or y == 0:
+                c = FLOOR_EDGE
+            elif y == 1:
+                c = FLOOR_TOP
+            elif (x * 7 + y * 13) % 61 == 0:
+                c = FLOOR_SPECK
+            elif (x * 11 + y * 5) % 47 == 0:
+                c = FLOOR_EDGE
+            else:
+                c = FLOOR
+            px[x, y] = (c[0], c[1], c[2], 255)
+    return im
+
+
+def floor_texture(w: int, h: int, cell: int = 36) -> Image.Image:
+    """Dokuyu tahtanin tamamina doser (hucre izgarasiyla hizali)."""
+    t = floor_tile(cell)
+    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    for y in range(0, h, cell):
+        for x in range(0, w, cell):
+            im.paste(t, (x, y))
+    return im
+
 # parca dosyalari (slice cikti adlari)
 P = {
     "corner_tl": "06_141x125_at_59_395.png",
@@ -104,7 +142,8 @@ def build() -> Image.Image:
     cv.alpha_composite(c_br, (FX1 - c_br.size[0], FY1 - c_br.size[1]))
 
     # --- tahta zemini (duz lacivert; izgara + noktalar kodda cizilir) ---
-    floor = Image.new("RGBA", (BX1 - BX0, BY1 - BY0), (*FLOOR, FLOOR_ALPHA))
+    floor = floor_texture(BX1 - BX0, BY1 - BY0)
+    floor.putalpha(FLOOR_ALPHA)
     cv.alpha_composite(floor, (BX0, BY0))
 
     # ------------------------------------------------------------------ DEKOR

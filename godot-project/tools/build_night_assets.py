@@ -21,6 +21,10 @@ GLOBE_SRC = _paths.sheet("ChatGPT Image 14 Eyl 2026 19_17_27.png")
 
 SKY_W, SKY_H = 960, 760            # oyun viewport'u
 
+# NOT: Gökyüzüne ay/baykuş EKLENMEDİ. HUD panelleri ekranın üstündeki y 0..104
+# şeridini tamamen kaplıyor, gökyüzü oyun içinde GÖRÜNMÜYOR (sadece yanlarda
+# ~10 px şerit kalıyor). Oraya çizilen her şey ölü içerik olur.
+
 
 def build_sky() -> None:
     im = Image.open(SKY_SRC).convert("RGB")
