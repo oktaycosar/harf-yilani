@@ -1,0 +1,299 @@
+========================================================================
+ HARF YILANI - GRAFİK YENİDEN ÜRETİM NOTLARI
+ (14.09.2026 — bu dosya ilk yazılırken kit #5 = "ChatGPT Image 14 Eyl 2026 12_50_28.png"
+  inceleniyordu; O KİT KULLANILMADI. Bölüm 0 güncel durumdur, önce onu oku.)
+========================================================================
+
+------------------------------------------------------------------------
+0) GÜNCEL DURUM - 14.09.2026 AKŞAM   (bölüm 3 ve bölüm 8 TAMAMEN ÇÖZÜLDÜ)
+------------------------------------------------------------------------
+
+Bölüm 3 ("düzeltilmesi gereken 3 şey") ve bölüm 8 ("hiç ürettirmeden
+benim düzeltebileceklerim") listeleri TAMAMLANDI. **Yeniden üretim
+gerekmedi.** Atlas artık iki aşamalı üretiliyor:
+
+    1) _tools/build_snake_v2.py          ->  _tools/_v2b_snake.png
+    2) _tools/refine_snake.py --apply    ->  assets/snake/snake.png   (SON)
+
+Maddelerin son durumu (hepsi ÖLÇÜMLE doğrulandı):
+
+  (3-1) GÖVDE PARÇALARI KESİNTİSİZ ......... ✅ ÇÖZÜLDÜ
+        Gövde/köşe artık hazır sprite DEĞİL; kaynak yılanın DÜZ gövdesinden
+        ÜRETİLİYOR: 36px'lik dilim aynalanıp karo yapılıyor, köşeler borunun
+        KENDİ kesitiyle süpürülüyor (sweep). Krem "kesik uç" kalmadı.
+  (3-2) KAFA / GÖVDE ORANI ................. ✅ ÇÖZÜLDÜ
+        Önce: kafa 46/49/50/52 px — 4 yön FARKLI ve gövdenin 1.53-1.73 katı.
+        Şimdi: 4 yön de TAM 34 px = gövdenin 1.13 katı (istenen "%15 büyük").
+        Kafa boru eksenine ortalanır, arka kenarı boruya birleşik kalır.
+  (3-3) GÖVDE KALINLIĞI TUTARSIZ .......... ✅ ÇÖZÜLDÜ (+ yeni kusur bulundu)
+        Tek global ölçek: tüm açık kenarlarda boru TAM 30 px.
+        EK: kuyruk tabanı 29 px kalmıştı (1 px basamak) -> gövde dokusuyla
+        birebir dolduruldu, artık 30 px.
+  (8-a) KÖŞE EŞLEMESİ ..................... ✅ GEREKSİZ KALDI
+        (köşeler artık elle eşlenmiyor, kesitten üretiliyor)
+  (8-b) DİKEY GÖVDE = 90° DÖNÜŞ ........... ✅ UYGULANDI
+  (8-c) KAFA ORANINI DÜŞÜR ................ ✅ UYGULANDI (yukarıdaki 3-2)
+  (8-d) KENAR SERTLEŞTİRME ................ ✅ UYGULANDI
+        Atlas'ta %9 kısmi alfa vardı (küçültmenin bıraktığı yumuşak kenar)
+        -> alfa eşiklendi, artık %0. Pixel font/vektör arayüzle aynı dil.
+        Ayrıca küçültme artık ALFA-DUYARLI (premultiply -> resize ->
+        unpremultiply); yoksa şeffaf piksellerin siyahı kenara karışıp koyu
+        hale yapıyordu (magenta olayının aynısı).
+
+TEST KİLİDİ: tests/test_game.gd -> _test_atlas_geometry()
+  12 açık kenarda boru = 30 px, 4 kafada kalınlık EŞİT ve <= 44 px,
+  kısmi alfa yok. Atlas yanlış üretilirse test kırılır.  (Toplam 368 test)
+
+  ⚠ Yeni PNG'den sonra `godot --headless --path <proj> --import` ŞART.
+  ⚠ Kafa oranını değiştirmek istersen: refine_snake.py -> HEAD_RATIO (tek satır).
+  ⚠ Karşılaştırma görselleri: _tools/_v3kars_*.png (mevcut / v3 / v3-sert)
+
+AÇIK KALANLAR (kozmetik, isteğe bağlı):
+  - Gövde dokusu 36px'te bir "yaprak/pul" deseniyle tekrar ediyor (aynalama
+    yüzünden). Kaynak yılanın düz gövdesinden DAHA UZUN kesit alınıp karo
+    periyodu büyütülürse azalır.
+  - Zemin taş deseni ve gökyüzü ay/baykuş silueti (mockup'ta var, henüz yok).
+
+
+========================================================================
+
+İÇİNDEKİLER
+  0) GÜNCEL DURUM - bölüm 3 ve 8 ÇÖZÜLDÜ  <-- ÖNCE BUNU OKU
+  1) ÇÖZÜNÜRLÜK ÖLÇÜMÜ - sonuç: yeniden ürettirmeye GEREK YOK
+  2) ŞU AN İYİ OLANLAR (dokunma)
+  3) DÜZELTİLMESİ GEREKEN 3 ŞEY  — ✅ ÇÖZÜLDÜ (tarihsel kayıt)
+  4) KOPYALA-YAPIŞTIR PROMPT (jeneratöre verilecek metin)
+  5) TEKNİK ŞARTLAR - otomatik dilimleme için KRİTİK
+  6) GEREKLİ VARLIK LİSTESİ (isim / ölçü / not)
+  7) TÜRKÇE KARAKTER NOTU
+  8) HİÇ ÜRETTİRMEDEN BENİM DÜZELTEBİLECEKLERİM  — ✅ YAPILDI (tarihsel kayıt)
+
+
+------------------------------------------------------------------------
+1) ÇÖZÜNÜRLÜK ÖLÇÜMÜ
+------------------------------------------------------------------------
+Ölçüm: kaynak sprite'lardaki renk bloklarının (piksel tekrarlarının) boyutu.
+
+  Kaynak kafa .......... 102x112 px  ->  oyunda 46px = 2.2x küçültme
+  En ince detay ........ ~2 px       ->  küçültmeden sonra ~1px, KURTULUYOR
+  Blok dağılımı ........ 2px %25, 3px %16, 4px %12, 5px %5 ...
+
+SONUÇ:
+  * Çözünürlük YETERLİ. 2-3x küçültme sağlıklı aralıktır, detay kaybı yok.
+  * YENİDEN ÜRETTİRMEYE GEREK YOK.
+
+ANCAK dikkat: blok dağılımı dağınık (baskın tek blok yok). Gerçek pixel-art'ta
+tek bir blok boyutu %60-80 çıkar. Yani bu görseller "yumuşak / anti-aliased"
+çizim, gerçek pixel-art değil. Küçültünce kenarlar hafif yumuşak kalıyor.
+1x ekranda fark edilmiyor; "jilet gibi retro" isteyen varsa kök neden budur
+(madde 4-B'deki prompt bunu çözer).
+
+
+------------------------------------------------------------------------
+2) ŞU AN İYİ OLANLAR - YENİDEN ÜRETTİRMEYE GEREK YOK
+------------------------------------------------------------------------
+  [x] Yılan kafaları: 4 yön + 7 ifade (normal/mutlu/yiyor/şaşkın/utanmış/
+      sıkılmış/hasarli) - oranlar ve karakter tutarlı
+  [x] Tam Türkçe alfabe harf taşları (A-Z + Ç Ğ İ Ş)
+  [x] Harf kutusu durumları (boş / normal / altın / mavi / kırmızı / kırık)
+  [x] Kalpler (dolu / çatlak / boş)
+  [x] İkonlar (yıldız / madalya / iksir / kum saati / dişli / parıltı)
+  [x] Efektler (puan +10, parıltı, patlama parçacıkları)
+  [x] Sayı panelleri 0-9
+  [x] HUD bar + paneller + butonlar (BAŞLA / DEVAM ET / ses / müzik / X)
+  [x] Zemin ve duvar (taş) tile'ları
+  [x] Dekor (baykuş, fener, kitaplar, saksı, tabelalar, çit, sandık)
+
+
+------------------------------------------------------------------------
+3) DÜZELTİLMESİ GEREKEN 3 ŞEY  — ✅ ÜÇÜ DE ÇÖZÜLDÜ (bkz. bölüm 0)
+------------------------------------------------------------------------
+(TARİHSEL KAYIT: aşağıdaki ölçümler v2 + refine öncesine aittir.)
+(1) GÖVDE PARÇALARI KESİNTİSİZ DEĞİL  ** EN KRİTİK **
+    Ölçüm (_kit4_parts.png): 7 gövde parçasından SADECE yatay kapsül kesintisiz.
+    Dikey gövde ve 4 dönüş parçasının uçlarında KREM "KESİK UÇ" var.
+    Zincirlenince parçalar arasına krem şerit giriyor -> yılan "kesilmiş
+    sosis" gibi görünüyor, bütün durmuyor.
+    ISTENEN: her gövde parçasının iki ucu BİREBİR AYNI olsun, uçta krem /
+    kapak / kesik yüz olmasın. Yan yana dizilince dikiş görünmemeli.
+
+(2) KAFA / GÖVDE ORANI
+    Şu an: kafa 46px, gövde borusu 30px -> kafa %53 BÜYÜK.
+    Istenen: "%15 büyük" denmişti.
+    ISTENEN: kafa, gövde kalınlığının ~1.15 KATI olsun.
+
+(3) GÖVDE KALINLIĞI TUTARSIZ
+    Kit'te yatay gövde 92x72 (boru 72), dikey gövde 66x91 (boru 66).
+    Aynı yılanın yatay ve dikey parçaları farklı kalınlıkta olmamalı.
+    ISTENEN: tüm gövde/köşe/kuyruk parçalarında boru kalınlığı AYNI.
+
+
+------------------------------------------------------------------------
+4) KOPYALA-YAPIŞTIR PROMPT (jeneratöre)
+------------------------------------------------------------------------
+
+--- 4-A) SADECE GÖVDE PARÇALARINI DÜZELT (en çok işe yarayan) ----------
+
+  "Pixel art sprite sheet of a cute green snake BODY PARTS ONLY,
+   top-down 2D game view, on a FLAT solid magenta background (#FF00FF).
+
+   STRICT RULES:
+   - Every body piece must be SEAMLESS: both open ends must be IDENTICAL,
+     so that pieces placed next to each other show NO seam at all.
+   - NO cream/beige cap, NO cut-face, NO end cap at the open ends.
+     The tube must continue into the neighbouring tile perfectly.
+   - Tube thickness MUST be exactly the same in every piece.
+   - All pieces are drawn as closed green tubes with a dark outline.
+
+   PIECES (every one exactly 120x120 px, centered in its own cell):
+     1. horizontal straight tube
+     2. vertical straight tube
+     3. corner: open LEFT + open DOWN
+     4. corner: open RIGHT + open DOWN
+     5. corner: open LEFT + open UP
+     6. corner: open RIGHT + open UP
+     7. tail: wide open end on the LEFT, tapering to a pointed tip RIGHT
+     8. tail: wide open end on the TOP, tapering to a pointed tip DOWN
+
+   Each piece must touch the cell edges exactly where it is open,
+   so the tube continues seamlessly into the next cell.
+
+   Grid: 4 columns x 2 rows, 120 px per cell, 30 px empty gutter between
+   cells, NO drop shadow, NO glow, NO label, NO text."
+
+
+--- 4-B) GERÇEK PIXEL-ART İSTİYORSAN (keskin kenar) -------------------
+
+  "TRUE PIXEL ART sprite, HARD EDGES, NO anti-aliasing, NO gradients,
+   NO soft shading, NO blur, NO drop shadow.
+   Logical resolution 32x32 pixels, then upscaled exactly 4x with
+   nearest-neighbour to 128x128 px. Maximum 24 colours, flat colour fills,
+   black outline. Flat solid magenta background (#FF00FF)."
+
+
+--- 4-C) TAM KİT (hepsini birden ürettirmek istersen) -----------------
+
+  "2D game UI asset kit, cute retro pixel art, owl-themed word game,
+   on FLAT solid magenta background (#FF00FF).
+
+   Layout: strict grid, every cell 128x128 px, 32 px empty gutter between
+   cells, each sprite CENTERED in its cell.
+
+   Rows:
+     Row 1 - snake head 4 directions: up, down, left, right
+             (up = back of head seen from above, no face)
+     Row 2 - snake head expressions: normal, happy, eating, shocked,
+             confused, bored, damaged
+     Row 3 - body: horizontal tube, vertical tube, 4 corners, 2 tails
+             (SEAMLESS, identical open ends, same tube thickness)
+     Row 4 - letter tile states: empty, gold, blue, red, broken
+     Row 5 - icons: heart full, heart cracked, heart empty, star,
+             coin, potion, hourglass, gear
+     Row 6 - HUD panels: level plate, word plate, lives plate,
+             bonus plate, score plate  (NO text baked in)
+     Row 7 - buttons: start, continue, play, pause, gear, music, sound, close
+     Row 8 - ground tiles and stone wall tiles
+
+   NO drop shadows, NO glow touching the background, NO labels, NO text,
+   NO baked-in letters on generic tiles."
+
+
+------------------------------------------------------------------------
+5) TEKNİK ŞARTLAR - OTOMATİK DİLİMLEME İÇİN KRİTİK
+------------------------------------------------------------------------
+Bu maddeler benim kit'i otomatik parçalara ayırmamı sağlıyor. Uyulmazsa
+parçalar birbirine yapışıyor ve elle kesmek gerekiyor (zaman kaybı).
+
+  [ ] Zemin TEK DÜZ RENK olsun, sprite'ların hiçbir renginde olmasın.
+      En iyisi: saf magenta #FF00FF (hiçbir sprite'ta magenta olmaz).
+  [ ] GÖLGE / PARILTI / GLOW KULLANMA. Yumuşak gölge zemine karışıp
+      komşu parçayla birleşiyor -> otomatik ayrıştırma bozuluyor.
+  [ ] Sprite'lar arasında en az 32 px BOŞLUK bırak.
+  [ ] Her sprite KENDİ HÜCRESİNİN TAM ORTASINDA olsun.
+  [ ] Hücre boyutu tek tip olsun (örnek: hepsi 128x128).
+  [ ] ETİKET / YAZI koyma (ya da yazıları ayrı bir sütuna, parçalardan
+      en az 64 px uzağa koy).
+  [ ] Genel taşların üzerine HARF BASMA (harfleri oyunun kendi pixel
+      fontu ile biz yazıyoruz; sadece alfabe setinde harf olsun).
+  [ ] Saydam PNG verebiliyorsan en iyisi; veremiyorsan düz renk zemin.
+  [ ] Kaynak boyutu, oyun boyutunun TAM SAYI KATI olsun (3x veya 4x).
+      Oyun boyutları aşağıda (madde 6). Örnek: 30px boru -> kaynak 120px.
+
+  NOT: Jeneratörün çıktısı 1536x1024 gibi SABİT boyutlarda geliyor.
+  Bu yüzden hücreyi 120-128 px seçmek en verimlisi.
+
+
+------------------------------------------------------------------------
+6) GEREKLİ VARLIK LİSTESİ
+------------------------------------------------------------------------
+Oyun hücresi 36 px, boru kalınlığı 30 px. Kaynak için 4x öneriliyor.
+
+  VARLIK                        OYUN     KAYNAK(4x)   ADET   NOT
+  ---------------------------   ------   ----------   ----   --------------
+  Yılan kafası                 38x38    152x152      4      yön: yukarı/aşağı/
+                                                             sol/sağ (yukarı =
+                                                             tepeden ense)
+  Yılan kafası ifadeleri       38x38    152x152      7      normal, mutlu,
+                                                             yiyor, şaşkın,
+                                                             utanmış, sıkılmış,
+                                                             hasarlı
+  Gövde: yatay boru            36x30    144x120      1      KESİNTİSİZ
+  Gövde: dikey boru            30x36    120x144      1      KESİNTİSİZ
+  Gövde: 4 köşe                ~36x36   120x120      4      lu, ur, dl, rd
+  Kuyruk                       36x30    144x120      2      yatay + dikey
+  Harf taşı (boş)              36x36    144x144      1      üzerine harf basma
+  Harf taşı (altın)            36x36    144x144      1      kelime harfi
+  Harf taşı (mavi)             36x36    144x144      1      bonus harf
+  Harf taşı (kırmızı)          36x36    144x144      1      yanlış
+  Harf taşı (kırık parçalar)   ~48x48   192x192      1      animasyon
+  Kalp: dolu/çatlak/boş        22x22    88x88        3
+  İkon: yıldız/madalya/iksir/  28x28    112x112      5
+        kum saati/dişli
+  HUD paneli (yazısız)         değişir  4x           5      bölüm/kelime/can/
+                                                             bonus/skor
+  Buton: başla/devam/oynat/    ~72x72   288x288      6
+         duraklat/dişli/ses
+  Zemin tile                   36x36    144x144     1-2     döşenebilir
+  Duvar (taş) tile             36x36    144x144     3-4     engel için
+  Dekor (baykuş, fener,        değişir  değişir      8
+        kitaplar, saksı, tabela, çit, sandık, çalı)
+
+
+------------------------------------------------------------------------
+7) TÜRKÇE KARAKTER NOTU
+------------------------------------------------------------------------
+Alfabe setinde şu karakterler MUTLAKA olmalı (oyun Türkçe kelime öğretiyor):
+    A B C Ç D E F G Ğ H I İ J K L M N O Ö P R S Ş T U Ü V Y Z
+Türkçe'de ayrıca küçük harf kullanılmıyor (oyun BÜYÜK harf kullanır).
+
+Şu karakterler KULLANILMAYACAK (mevcut pixel fontta yok, o yüzden arayüzden
+çıkardım): emoji ve ✓ ⚡ ★ dışındaki semboller. ★ kullanılabilir.
+
+
+------------------------------------------------------------------------
+8) HİÇ ÜRETTİRMEDEN BENİM DÜZELTEBİLECEKLERİM  — ✅ HEPSİ YAPILDI (bölüm 0)
+------------------------------------------------------------------------
+(a) ve (b) zaten uygulanmıştı, (c) ve (d) refine_snake.py ile yapıldı.
+Aşağısı tarihsel kayıt (onay istenen ilk hâli):
+
+  (a) KÖŞE EŞLEMESİNİ ELLE DÜZELT
+      Otomatik tespit 2 köşeyi aynı isimle eşledi; sheet'te corner_lu ve
+      corner_ur eksik kaldı. Elle eşleme:
+        100x91@260,189  ->  corner_dl  (sol + aşağı)
+         97x91@405,189  ->  corner_rd  (sağ + aşağı)
+         96x92@536,189  ->  corner_lu  (SOL + YUKARI)  <-- tespit "rd" sanmış
+         90x91@669,189  ->  corner_ur  (sağ + yukarı)
+
+  (b) DİKEY GÖVDEYİ YATAY PARÇANIN 90° DÖNMÜŞÜ YAP
+      Kit'teki yatay kapsül (92x72@22,198) kesintisiz çıktı; onu 90°
+      döndürünce kesintisiz dikey gövde elde edilir. Krem uçlu dikey
+      parça kullanılmaz -> dikiş sorunu biter.
+
+  (c) KAFA ORANINI %53 -> %15'E ÇEK
+      46px -> 38px (gövde borusu 30px kalır).
+
+  (d) KENAR SERTLEŞTİRME (istenirse)
+      Küçültmede ikili alfa + palet kuantalama -> kenarlar daha keskin
+      pixel-art görünümü alır (yumuşaklık azalır).
+
+========================================================================
