@@ -22,10 +22,12 @@ func get_difficulty_for_level(level: int, easy_mode: bool = false) -> Dictionary
                 # Hız: her bölümde biraz daha hızlı
                 var base: float = C.SPEED_MAX_SEC - (level - 1) * C.SPEED_STEP_SEC
                 var adjusted: float = base / tier["speed_multiplier"]
-                # Kolay mod: daha yavaş
-                if easy_mode:
-                                adjusted = adjusted / C.EASY_MODE_SPEED_MULTIPLIER
+                # NOT: Kolay mod çarpanı clamp'ten SONRA uygulanır (web sürümüyle
+                # aynı sıra). Önce uygulanırsa yüksek bölümlerde hız alt sınıra
+                # dayanır ve kolay modda hiç yavaşlamaz.
                 var step_sec: float = clampf(adjusted, C.SPEED_MIN_SEC, C.SPEED_MAX_SEC)
+                if easy_mode:
+                                step_sec = step_sec / C.EASY_MODE_SPEED_MULTIPLIER
 
                 # Engel sayısı: kolay modda engel yok
                 var obstacle_count: int = 0
@@ -46,6 +48,7 @@ func get_difficulty_for_level(level: int, easy_mode: bool = false) -> Dictionary
                                 "obstacle_count": obstacle_count,
                                 "timed": timed,
                                 "time_limit_ms": time_limit_ms,
+                                "hide_word": bool(tier.get("hide_word", false)),
                 }
 
 

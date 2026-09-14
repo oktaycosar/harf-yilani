@@ -26,30 +26,35 @@ func _build_database() -> void:
 				4: ["ADAM", "MASA", "ELMA", "KAPI", "BABA", "KALE", "EVİM", "ÇİLE", "BORU", "BALO", "EKİM", "KÜPE", "YAZI", "BORA", "DURU", "SABA", "TUĞL", "DİŞİ", "SUCU", "YÜZÜ", "GÖLÜ", "GÖCE", "KEÇİ", "EŞEK", "TAVU"],
 				5: ["KİTAP", "KALEM", "ÇİÇEK", "BULUT", "DENİZ", "YILAN", "BALIK", "KÖPRÜ", "SİNEK", "GÜNEŞ", "MAKAS", "DEFNE", "KAĞIT", "ÇANTA", "BİLGİ", "SULAR", "BİLGE", "MÜZİK", "SEBZE", "ARMUT", "TAVUK", "GÖMLE", "CAMLI", "EKMEK", "ARPA"],
 				6: ["BİLİM", "BAHÇE", "KAHVE", "GÖMLEK", "BÖLÜM", "YILDIZ", "KUŞLAR", "ŞARKIL", "KAĞIDI", "SEPETİ", "TRENLER", "SOKAKL", "YATAKL", "ÇOCUKL", "KAPILA", "TORBASI", "TARÇIN", "TAVŞAN"],
+				7: ["PENCERE", "KELEBEK", "PATATES", "KURBAĞA", "PAPATYA", "MENEKŞE", "ŞEMSİYE", "TELEFON", "ARKADAŞ", "ÖĞRENCİ", "HARFLER", "OYUNLAR", "SEVİMLİ", "KÜÇÜCÜK", "ÇİÇEKLİ", "GÖKYÜZÜ", "BULUTLU", "GÜNEŞLİ", "AĞAÇLAR", "SAATLER", "RENKLER", "TİYATRO", "KİTAPLI", "OYUNCAK", "MÜZİKLİ", "RESİMLİ", "KOCAMAN", "ÇALIŞMA", "ÇEKİRGE", "DENİZCİ"],
 		}
 		_db["hayvanlar"] = {
 				3: ["ARI", "BAL", "DAL"],
 				4: ["KEÇİ", "EŞEK", "TAVU", "BALI", "KOYU", "KUŞU", "ARIK"],
 				5: ["BALIK", "SİNEK", "TAVUK"],
 				6: ["TAVŞAN", "YILDIZ"],
+				7: ["KELEBEK", "KURBAĞA", "ÇEKİRGE", "PENGUEN", "BALIKÇI"],
 		}
 		_db["yiyecekler"] = {
 				3: ["BAL", "SÜT", "ÇAY", "YAĞ", "EKİ"],
 				4: ["ELMA", "BALO", "ARPA", "EKİM", "DİŞİ", "SUCU", "YÜZÜ"],
 				5: ["ARMUT", "SEBZE", "ÇİLEK", "KARPU", "EKMEK", "BALIK"],
 				6: ["KAHVE", "TARÇIN", "BAKLIM"],
+				7: ["PATATES", "KAHVELİ", "SEBZELİ", "BALIKLI", "MEYVELİ", "ÇİLEKLİ", "KARPUZU"],
 		}
 		_db["esya"] = {
 				3: ["KOL", "KÖY", "GÖL"],
 				4: ["MASA", "KAPI", "KALE", "BORU", "KÜPE", "YAZI", "BALO", "DURU", "SABA", "TUĞL", "KEÇİ", "EŞEK"],
 				5: ["KİTAP", "KALEM", "MAKAS", "KAĞIT", "ÇANTA", "GÖMLE", "KÖPRÜ", "DEFNE", "CAMLI"],
 				6: ["GÖMLEK", "SEPETİ", "TORBASI", "KAĞIDI", "BÖLÜM"],
+				7: ["PENCERE", "ŞEMSİYE", "TELEFON", "SANDAYE", "KİTAPLI", "DOLAPLI", "KALEMLİ"],
 		}
 		_db["doga"] = {
 				3: ["ADA", "DAL", "GÜL", "GÖL", "ÇAY", "YAĞ", "YIL", "KÖY"],
 				4: ["EVİM", "BORU", "BALO", "BORA", "DURU", "SABA", "TUĞL", "GÖCE", "GÖLÜ"],
 				5: ["BULUT", "DENİZ", "GÜNEŞ", "ÇİÇEK", "DEFNE", "SULAR", "CAMLI", "GÖMLE"],
 				6: ["BAHÇE", "YILDIZ", "YATAKL", "SOKAKL", "ÇOCUKL", "KAPILA"],
+				7: ["GÖKYÜZÜ", "BULUTLU", "GÜNEŞLİ", "AĞAÇLAR", "DENİZLİ", "ORMANLI", "ÇİÇEKLİ"],
 		}
 
 

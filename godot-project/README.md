@@ -36,6 +36,38 @@ godot-project/
 3. `scenes/Main.tscn` ana sahne olarak otomatik ayarlanmıştır (project.godot).
 4. **F5** ile çalıştırın.
 
+> ⚠️ **Projeyi ilk kez açtığınızda** Godot `.godot/` klasörünü oluşturur ve
+> `class_name` tanımlarını kaydeder. Bu klasör silinirse `Could not find type
+> "Letter"` benzeri parse hataları alırsınız — çözüm: projeyi editörde bir kez açın.
+
+## ✅ Doğrulama (headless test)
+
+Proje, oyun kurallarını gerçekten çalıştıran bir headless test içerir
+(`tests/test_game.gd` → 148 kontrol). Kod değiştirdikten sonra çalıştırın:
+
+```bash
+godot --headless --path godot-project res://tests/test_game.tscn
+```
+
+Çıkış kodu `0` ise tüm testler geçti. Testler şunları doğrular:
+
+- Sabitler ve engel sayısı kademeleri (5 → 0, 6 → 2, … 50 → 10 engel)
+- Kategori gidiş-dönüş dönüşümleri ve skin arama
+- Kelime veritabanı: her kategori × uzunluk için kelime var, uzunluklar doğru
+- Zorluk kademeleri, süreli mod eşiği, **kolay modun her bölümde daha yavaş olması**
+- **`order_index` ile duplicate harf sırası** (ADA → A(0), D(1), A(2))
+- Harf/engel/bonus/buz/booster yerleştirme ve çakışmama
+- Hız çarpanı: normal 1.0, buz 0.5, boost 1.8, buz+boost 0.9, süre dolunca sıfırlanma
+- Hareket, ters yön engeli, doğru/yanlış harf, duvar ve engel çarpışması sinyalleri
+- Prosedürel ses: 11 efektin PCM sentezi, ses havuzu, sessiz mod
+- GameManager: autoload, stats anahtarları, 14 başarım, TR→EN sözlüğü, skin kalıcılığı
+
+Ayrıca oyunun kendisini de hatasız başlattığını doğrulayabilirsiniz:
+
+```bash
+godot --headless --path godot-project --quit-after 60
+```
+
 ## 🎮 Kontroller
 
 | Tuş | İşlev |
@@ -221,18 +253,51 @@ _db["hayvanlar"][5] = ["BALIK", "SİNEK", "TAVUK", "YENİKELİME"]
 - `.tscn` sahneleri metin tabanlıdır; Godot editöründe açıp görsel olarak düzenleyebilirsiniz.
 - `Letter.tscn` içindeki `AnimationPlayer`'a `pulse` ve `vanish` animasyonlarını
   editörden eklemeniz gerekebilir (sahne iskeleti hazırdır).
-- Ses efektleri henüz Godot tarafında eklenmedi — `sound_enabled`/`sound_volume`/`tts_volume`
-  state olarak tutulur ama gerçek ses çalmaz. İleride `AudioStreamPlayer` ile eklenebilir.
+- Ses efektleri **prosedürel olarak sentezlenir** (`scripts/sound_manager.gd`) —
+  hiçbir ses dosyası gerekmez, 11 efekt (correct, wrong, word_complete, level_up,
+  game_over, bonus, boost, ice, menu_click, start, time_warning) çalışma anında
+  16-bit PCM olarak üretilip önbelleğe alınır.
 - Bu Godot projesi, web (Next.js) sürümüyle aynı mantığı paylaşır —
   web sürümünü `bun run dev` ile `/` route'unda oynayabilirsiniz.
 
+## 📦 Dışa Aktarma (Export)
+
+Projeyi dağıtılabilir hâle getirmek için Godot editöründe:
+
+1. **Editor → Manage Export Templates** → **Download and Install** (sürüm 4.7.1
+   şablonları indirilir; bir kez yapılır).
+2. **Project → Export…** → **Add…** → hedef platformu seçin
+   (Windows Desktop / Web / Linux).
+3. **Export Project…** ile derleyin.
+
+Komut satırından (şablonlar kurulduktan sonra):
+
+```bash
+# Windows
+godot --headless --path godot-project --export-release "Windows Desktop" build/HarfYilani.exe
+
+# Web (HTML5)
+godot --headless --path godot-project --export-release "Web" build/web/index.html
+```
+
+> Not: `--export-release` için `export_presets.cfg` içinde ilgili preset tanımlı
+> olmalıdır. Preset'leri editörden bir kez eklemeniz yeterlidir.
+> Web export'u için sunucunuzda `Cross-Origin-Opener-Policy: same-origin` ve
+> `Cross-Origin-Embedder-Policy: require-corp` başlıkları gerekir.
+
 ## 🛠️ İleride Eklenebilecekler
 
-- Gerçek ses efektleri (AudioStreamPlayer + SFX dosyaları).
+Godot tarafında **hâlihazırda mevcut**: prosedürel ses (11 efekt), boost izi,
+yılan baş detayları (göz, göz bebeği, yön oku), combo flash, achievement bildirimi,
+süre çubuğu ve varlık sayaçları (engel/bonus/buz/boost).
+
+Henüz yok:
+
 - Konfeti efekti (kelime tamamlandığında particle burst).
-- Yılan head detayları (göz, dil, yön oku) — Snake `_redraw()` genişletilerek.
-- Boost trail efekti (boost halindeyken arkada amber iz).
 - Yılan ölüm parçalanma efekti.
 - Kelime tamamlama harf-by-harf animasyonu.
-- Pause menüsü istatistik özeti.
+- Pause menüsü istatistik özeti paneli (şu an yalnızca "DURAKLATILDI" mesajı).
 - Achievement detay modalı (tıklanınca açılma tarihi + büyük ikon).
+- Menüde skin / kategori seçimi ve TR→EN / kolay mod / günlük challenge butonları.
+- Ayarlar paneli (istatistik / başarım / liderlik / kategori / haftalık sekmeleri).
+- Yılanın çatal dili (göz ve yön oku var, dil yok).

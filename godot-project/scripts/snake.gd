@@ -31,7 +31,11 @@ signal ice_entered()
 var body: Array[Vector2i] = []
 var direction: Vector2i = DIR_RIGHT
 var _pending_direction: Vector2i = DIR_RIGHT
+# Büyüme kredisi: GameManager doğru harfte 1 kredi verir, step() onu harcar
+# (kredi harcanırsa kuyruk silinmez -> yılan 1 segment uzar).
 var _grow_pending: int = 0
+# Uzunluk tavanı (0 = sınırsız). Bölüm başında main.gd ayarlar.
+var max_length: int = 0
 
 # Sınırlar
 var cols: int = C.GRID_COLS
@@ -54,14 +58,56 @@ var boost_end_time: int = 0
 # Bu tick'te buz üzerinde miyiz?
 var on_ice: bool = false
 
+# Boost izi — boost aktifken dolar: [{cell: Vector2i, t: int}]
+var _trail: Array = []
+const TRAIL_MAX_MS: int = 500
+const TRAIL_MAX_POINTS: int = 8
+
+# --------------------------------------------------------------------------
+# Sprite sheet (32x32, top-down pixel-art)
+#   satır 0: head_r   head_d   head_l   head_u
+#   satır 1: tail_r   tail_d   tail_l   tail_u
+#   satır 2: body_h   body_v   corner_rd  corner_dl
+#   satır 3: corner_lu corner_ur
+# Yön kuralı: sprite'ın ÖN ekseni adındaki yönü gösterir, gövde bağlantısı
+# karşı taraftadır. Köşe adı = AÇIK olan iki kenar (corner_rd: sağ+aşağı).
+# Top-down olduğu için parçalar birbirine dikişsiz oturur: boru bandı
+# hücre içinde 6..25 satır/sütunlarıdır.
+# --------------------------------------------------------------------------
+const SHEET_PATH: String = "res://assets/snake/snake.png"
+const HUE_SHADER_PATH: String = "res://assets/snake/snake_hue.gdshader"
+const SHEET_CELL: int = 144   # sheet hücresi: 576/4 = 144 (build_assets_from_indir.py ile aynı olmalı!)
+const SHEET_COLS: int = 4
+const BASE_HUE: float = 0.261   # sprite gövdesinin ÖLÇÜLEN hue değeri (#78e028)
+
+const SPRITE_LAYOUT: Array = [
+                "head_r", "head_d", "head_l", "head_u",
+                "tail_r", "tail_d", "tail_l", "tail_u",
+                "body_h", "body_v", "corner_rd", "corner_dl",
+                "corner_lu", "corner_ur", "", "",
+]
+const CORNER_NAMES: Array = ["rd", "dl", "lu", "ur"]
+
 # Aktif skin (Dictionary; constants.gd SNAKE_SKINS'ten)
 var skin: Dictionary = {}
 
 # Görsel kökler (runtime'da oluşturulur)
 var _segments_node: Node2D = null
 
+# Sprite sheet önbelleği
+var _sheet: Texture2D = null
+var _hue_shader: Shader = null
+var _atlas_cache: Dictionary = {}
+var _hue_material: ShaderMaterial = null
+var _hue_value: float = -1.0
+
 # Bir sonraki hedef harfin order_index'i (GameManager ile senkron)
 var current_target_index: int = 0
+# Bir sonraki hedef harfin KENDİSİ (BÜYÜK). Mükerrer harfli kelimelerde
+# (ANA, ARABA, KAKA...) aynı harften birden fazla taş olur ve oyuncu hangisinin
+# kaçıncı sıraya ait olduğunu AYIRT EDEMEZ -> hedef kontrolü HARF ile yapılır.
+# Boş string ise eski davranış (order_index) kullanılır.
+var current_target_char: String = ""
 
 
 func _ready() -> void:
@@ -70,6 +116,8 @@ func _ready() -> void:
                 add_child(_segments_node)
                 if skin.is_empty():
                                 skin = C.get_skin_by_id(C.DEFAULT_SKIN_ID)
+                _sheet = load(SHEET_PATH)
+                _hue_shader = load(HUE_SHADER_PATH)
 
 
 func reset(start_cell: Vector2i, length: int, dir: Vector2i) -> void:
@@ -89,6 +137,16 @@ func set_direction(dir: Vector2i) -> void:
                 if dir == -direction:
                                 return
                 _pending_direction = dir
+
+
+## Yenen harf sıradaki HEDEF harf mi?
+## Mükerrer harfli kelimelerde (ANA, ARABA) "ikinci A"yı yemek de DOĞRU
+## sayılmalı: taşlar görsel olarak ayırt edilemez. Bu yüzden karşılaştırma
+## order_index ile değil HARF ile yapılır.
+func is_target_letter(letter: Dictionary) -> bool:
+                if current_target_char != "":
+                                return str(letter["char"]) == current_target_char
+                return int(letter["order_index"]) == current_target_index
 
 
 ## Aktif hız çarpanı (boost + ice etkisiyle).
@@ -338,9 +396,14 @@ func step() -> void:
                 var head: Vector2i = body[0] + direction
 
                 # Duvar kontrolü
+                # WRAP_WALLS açıkken ölüm yok: kenardan çıkınca karşı taraftan girer
                 if head.x < 0 or head.y < 0 or head.x >= cols or head.y >= rows:
-                                wall_collision.emit()
-                                return
+                                if C.WRAP_WALLS:
+                                                head.x = posmod(head.x, cols)
+                                                head.y = posmod(head.y, rows)
+                                else:
+                                                wall_collision.emit()
+                                                return
 
                 # Engel kontrolü
                 for o in obstacles:
@@ -348,17 +411,19 @@ func step() -> void:
                                                 obstacle_collision.emit()
                                                 return
 
-                # Çakışma kontrolü: doğru harf, bonus veya booster yenecekse büyür
+                # Çakışma kontrolü: doğru harf veya booster yenecekse büyür.
+                # YILDIZ (bonus) ARTIK UZATMAZ — uzunluk bu oyunda AVANTAJ DEĞİL:
+                # kendine çarpma ölümle biter, yani uzamak cezadır. Yıldızın ödülü
+                # +puan ve her 15 yıldızda kuyruk düşmesidir (bkz. GameManager).
                 var letter: Dictionary = _find_letter_at(head.x, head.y)
                 var bonus: Dictionary = _find_bonus_at(head.x, head.y)
                 var booster: Dictionary = _find_booster_at(head.x, head.y)
 
+                var under_cap: bool = max_length <= 0 or body.size() < max_length
                 var will_grow: bool = false
-                if not letter.is_empty() and not letter["eaten"] and letter["order_index"] == current_target_index:
+                if under_cap and not letter.is_empty() and not letter["eaten"] and is_target_letter(letter):
                                 will_grow = true
-                if not bonus.is_empty():
-                                will_grow = true
-                if not booster.is_empty():
+                if under_cap and not booster.is_empty():
                                 will_grow = true
 
                 # Kendine çarpma kontrolü
@@ -381,21 +446,22 @@ func step() -> void:
                 if on_ice and not was_on_ice:
                                 ice_entered.emit()
 
-                # Hız artırıcı toplama
+                # Hız artırıcı toplama (ödül: puan + 4 sn hız; ARTIK UZATMAZ)
                 if not booster.is_empty() and not booster["eaten"]:
                                 booster["eaten"] = true
                                 boost_end_time = Time.get_ticks_msec() + C.SPEED_BOOST_DURATION_MS
                                 boost_collected.emit(C.SPEED_BOOST_POINTS)
 
-                # Bonus harf yeme
+                # Bonus yıldız yeme (ödül: puan + combo; ARTIK UZATMAZ)
                 if not bonus.is_empty() and not bonus["eaten"]:
                                 bonus["eaten"] = true
                                 ate_bonus.emit(bonus["char"], bonus["value"])
 
                 # Hedef harf kontrolü
                 if not letter.is_empty() and not letter["eaten"]:
-                                if letter["order_index"] == current_target_index:
-                                                # DOĞRU harf — GameManager skoru/sırayı yönetir
+                                if is_target_letter(letter):
+                                                # DOĞRU harf — GameManager skoru/sırayı/büyümeyi yönetir.
+                                                # Büyüme kredisi sinyal içinde (senkron) verilir.
                                                 letter["eaten"] = true
                                                 ate_letter.emit(letter)
                                 else:
@@ -406,17 +472,40 @@ func step() -> void:
                                                 moved.emit(head)
                                                 _redraw()
                                                 return
-                elif bonus.is_empty() and booster.is_empty():
-                                # Normal hareket: kuyruğu sil
+
+                # --- BÜYÜME KARARI (kuyruk silinsin mi?) ---
+                # Uzama SADECE doğru harften gelir (GameManager grant_growth() ile
+                # kredi verir). Toplanabilir öğeler (yıldız, hız iksiri) UZATMAZ:
+                # bu oyunda uzunluk skor değil — kendine çarpma ölümcül olduğu için
+                # her fazla segment ÖLÜM RİSKİDİR. Ödüller puan/combo/kuyruk düşmesi.
+                var grow_now: bool = false
+                if under_cap and _grow_pending > 0:
+                                _grow_pending -= 1
+                                grow_now = true
+                if not grow_now:
                                 body.pop_back()
-                # Bonus veya booster yendi: büyü (kuyruk silme)
 
                 moved.emit(head)
                 _redraw()
 
 
-func grow(amount: int = 1) -> void:
+## GameManager doğru harfte büyüme kredisi verir (bölüm içi büyüme kuralına göre).
+func grant_growth(amount: int = 1) -> void:
                 _grow_pending += amount
+
+
+## Kuyruktan segment düşürür (yıldız ödülü: her 15 yıldızda 1).
+## C.SNAKE_MIN_LENGTH altına inmez. Döner: gerçekten düşen segment sayısı.
+## NOT: `moved` sinyali YAYILMAZ — yayılırsa GameManager bunu bir adım sanıp
+## harf yeme kontrolü yapar ve haksız harf yenir.
+func shrink(amount: int = 1) -> int:
+                var removed: int = 0
+                while removed < amount and body.size() > C.SNAKE_MIN_LENGTH:
+                                body.pop_back()
+                                removed += 1
+                if removed > 0:
+                                _redraw()
+                return removed
 
 
 # --------------------------------------------------------------------------
@@ -455,37 +544,173 @@ func _redraw() -> void:
                                 child.queue_free()
                 if skin.is_empty():
                                 skin = C.get_skin_by_id(C.DEFAULT_SKIN_ID)
+                if body.is_empty():
+                                return
+
                 var boost_active: bool = boost_end_time > 0 and Time.get_ticks_msec() < boost_end_time
-                for i in range(body.size()):
+                _apply_hue(_hue_shift_for_state(boost_active))
+
+                var n: int = body.size()
+                # TERSTEN çiz: kuyruk önce, KAFA en son -> kafa üstte kalır
+                # (kafa ve boncuk hücreden taşar; boncuklar komşusuyla 2px bindirir)
+                for i in range(n - 1, -1, -1):
                                 var cell: Vector2i = body[i]
+                                var tex: AtlasTexture = _atlas(_segment_sprite(i, n))
+                                if tex == null:
+                                                continue
+                                var spr: Sprite2D = Sprite2D.new()
+                                spr.texture = tex
+                                spr.centered = true
+                                spr.position = Vector2(
+                                                cell.x * C.CELL_SIZE + C.CELL_SIZE * 0.5,
+                                                cell.y * C.CELL_SIZE + C.CELL_SIZE * 0.5)
+                                spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+                                spr.material = _hue_material
+                                _segments_node.add_child(spr)
+
+                _draw_trail(boost_active)
+                _draw_head_details(boost_active)
+
+
+## Bu gövde hücresi için hangi sprite? (kafa / düz / köşe / kuyruk)
+func _segment_sprite(i: int, n: int) -> String:
+                if n == 1:
+                                return "head_" + _dir_letter(direction)
+                if i == 0:
+                                # GÖRDÜĞÜ YÖN = kafadan boyuna değil, boyundan kafaya!
+                                # (_step_dir(body[0], body[1]) geri yönü verir -> kafa ters bakar)
+                                var d0: Vector2i = _step_dir(body[1], body[0])
+                                if d0 == Vector2i.ZERO:
+                                                d0 = direction
+                                return "head_" + _dir_letter(d0)
+                if i == n - 1:
+                                var dt: Vector2i = _step_dir(body[n - 2], body[n - 1])
+                                if dt == Vector2i.ZERO:
+                                                dt = direction
+                                return "tail_" + _dir_letter(dt)
+
+                var prev_dir: Vector2i = _step_dir(body[i], body[i - 1])
+                var next_dir: Vector2i = _step_dir(body[i], body[i + 1])
+                if prev_dir == -next_dir or prev_dir == next_dir:
+                                return "body_v" if prev_dir.x == 0 else "body_h"
+                var a: String = _dir_letter(prev_dir)
+                var b: String = _dir_letter(next_dir)
+                if CORNER_NAMES.has(a + b):
+                                return "corner_" + a + b
+                return "corner_" + b + a
+
+
+## İki komşu hücre arasındaki birim adım (duvardan geçişi de hesaba katar).
+func _step_dir(from: Vector2i, to: Vector2i) -> Vector2i:
+                var d: Vector2i = to - from
+                if d.x > 1:
+                                d.x -= cols
+                elif d.x < -1:
+                                d.x += cols
+                if d.y > 1:
+                                d.y -= rows
+                elif d.y < -1:
+                                d.y += rows
+                return d
+
+
+func _dir_letter(d: Vector2i) -> String:
+                if d.x > 0:
+                                return "r"
+                if d.x < 0:
+                                return "l"
+                if d.y > 0:
+                                return "d"
+                return "u"
+
+
+## Sheet'ten tek döşemeyi AtlasTexture olarak döndürür (önbellekli).
+func _atlas(sprite_name: String) -> AtlasTexture:
+                if sprite_name.is_empty():
+                                return null
+                if _atlas_cache.has(sprite_name):
+                                return _atlas_cache[sprite_name]
+                var idx: int = SPRITE_LAYOUT.find(sprite_name)
+                if idx < 0:
+                                return null
+                if _sheet == null:
+                                _sheet = load(SHEET_PATH)
+                var at: AtlasTexture = AtlasTexture.new()
+                at.atlas = _sheet
+                at.region = Rect2((idx % SHEET_COLS) * SHEET_CELL, (idx / SHEET_COLS) * SHEET_CELL,
+                                SHEET_CELL, SHEET_CELL)
+                _atlas_cache[sprite_name] = at
+                return at
+
+
+## Aktif duruma göre gövde hue kaydırması (skin + boost + buz).
+func _hue_shift_for_state(boost_active: bool) -> float:
+                var hex_str: String = "10b981"
+                if boost_active:
+                                hex_str = str(skin.get("boostHead", "f59e0b"))
+                elif on_ice:
+                                hex_str = str(skin.get("iceHead", "38bdf8"))
+                else:
+                                hex_str = str(skin.get("headColor", "10b981"))
+                var col: Color = Color.from_string("#" + hex_str, Color(0.13, 0.73, 0.51))
+                return wrapf(col.h - BASE_HUE, 0.0, 1.0)
+
+
+func _apply_hue(shift: float) -> void:
+                if _hue_material == null:
+                                if _hue_shader == null:
+                                                _hue_shader = load(HUE_SHADER_PATH)
+                                _hue_material = ShaderMaterial.new()
+                                _hue_material.shader = _hue_shader
+                if not is_equal_approx(shift, _hue_value):
+                                _hue_value = shift
+                                _hue_material.set_shader_parameter("hue_shift", shift)
+
+
+## Boost izi — boost aktifken başın geçtiği hücrelerde solan altın kareler.
+func _draw_trail(boost_active: bool) -> void:
+                if not boost_active or body.is_empty():
+                                _trail.clear()
+                                return
+                var now: int = Time.get_ticks_msec()
+                var head_cell: Vector2i = body[0]
+                if _trail.is_empty() or _trail[_trail.size() - 1]["cell"] != head_cell:
+                                _trail.append({"cell": head_cell, "t": now})
+                while _trail.size() > TRAIL_MAX_POINTS:
+                                _trail.pop_front()
+                var alive: Array = []
+                for p in _trail:
+                                if now - int(p["t"]) < TRAIL_MAX_MS:
+                                                alive.append(p)
+                _trail = alive
+                # Eski noktalar daha saydam (kuyruk → baş yönünde koyulaşır)
+                for p in _trail:
+                                var age: float = float(now - int(p["t"])) / float(TRAIL_MAX_MS)
+                                var alpha: float = clampf(1.0 - age, 0.0, 1.0) * 0.4
+                                if alpha <= 0.02:
+                                                continue
+                                var cell: Vector2i = p["cell"]
                                 var rect: ColorRect = ColorRect.new()
                                 rect.size = Vector2(C.CELL_SIZE - 4, C.CELL_SIZE - 4)
                                 rect.position = Vector2(cell.x * C.CELL_SIZE + 2, cell.y * C.CELL_SIZE + 2)
-                                if i == 0:
-                                                # Baş — duruma göre renk
-                                                if boost_active:
-                                                                rect.color = _skin_color(skin["boostHead"])
-                                                elif on_ice:
-                                                                rect.color = _skin_color(skin["iceHead"])
-                                                else:
-                                                                rect.color = _skin_color(skin["headColor"])
-                                else:
-                                                var t: float = float(i) / float(max(1, body.size() - 1))
-                                                var head_col: Color
-                                                var tail_col: Color
-                                                if boost_active:
-                                                                head_col = _skin_color(skin["boostHead"])
-                                                                tail_col = _skin_color(skin["boostTail"])
-                                                elif on_ice:
-                                                                head_col = _skin_color(skin["iceHead"])
-                                                                tail_col = _skin_color(skin["iceTail"])
-                                                else:
-                                                                head_col = _skin_color(skin["headColor"])
-                                                                tail_col = _skin_color(skin["tailColor"])
-                                                rect.color = head_col.lerp(tail_col, t)
+                                rect.color = Color(0.98, 0.75, 0.2, alpha)
                                 _segments_node.add_child(rect)
 
 
-## Skin hex string'inden Color üret (6 haneli RRGGBB).
-func _skin_color(hex_str: String) -> Color:
-                return Color.from_string("#" + hex_str, Color(0.5, 0.5, 0.5, 1.0))
+## Baş detayı — boost aktifken yön oku (gözler artık sprite'ın içinde).
+func _draw_head_details(boost_active: bool) -> void:
+                if not boost_active or body.is_empty():
+                                return
+                var head_cell: Vector2i = body[0]
+                var forward: Vector2 = Vector2(direction.x, direction.y)
+                var perp: Vector2 = Vector2(-direction.y, direction.x)
+                var centre: Vector2 = Vector2(
+                                head_cell.x * C.CELL_SIZE + C.CELL_SIZE * 0.5,
+                                head_cell.y * C.CELL_SIZE + C.CELL_SIZE * 0.5)
+                var arrow: Polygon2D = Polygon2D.new()
+                var tip: Vector2 = centre + forward * (C.CELL_SIZE * 0.98)
+                var back: Vector2 = centre + forward * (C.CELL_SIZE * 0.66)
+                var spread: Vector2 = perp * (C.CELL_SIZE * 0.20)
+                arrow.polygon = PackedVector2Array([tip, back + spread, back - spread])
+                arrow.color = Color(0.99, 0.85, 0.3, 0.95)
+                _segments_node.add_child(arrow)

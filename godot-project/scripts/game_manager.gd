@@ -30,11 +30,16 @@ signal word_complete(word: String, bonus: int, translation: String)
 signal game_over(score: int, level: int, words_completed: int)
 signal level_complete()
 signal step_requested()
+## Yılan büyüme kredisi istiyor (main.gd -> snake.grant_growth)
+signal snake_grow_requested(amount: int)
 
 # Yeni olay sinyalleri
 signal obstacle_collision()
 signal time_up()
 signal ate_bonus(char: String, gained: int)
+## Yıldız ödülü: her STARS_PER_TAIL_DROP yıldızda kuyruktan segment düşer
+signal stars_changed(stars: int, needed: int)
+signal snake_shrink_requested(amount: int)
 signal boost_collected(gained: int)
 signal ice_entered()
 signal time_changed(remaining_ms: int, limit_ms: int)
@@ -52,6 +57,14 @@ signal translation_shown(word: String, translation: String)
 var level: int = 1
 var lives: int = C.START_LIVES
 var score: int = 0
+## Bu bölümdeki başlangıç yılan uzunluğu (zorluk göstergesi)
+var snake_length: int = C.SNAKE_START_LENGTH
+## Bu bölümde kaç segment geçici büyüme kazanıldı (tavan: SNAKE_IN_LEVEL_GROWTH_MAX)
+var _in_level_growth: int = 0
+## Bu kelimede kaç doğru harf yendi (büyüme sıklığı için)
+var _word_growth_letters: int = 0
+## Bu kelimede yanlış harf yendi mi (hatasız bonusu için)
+var _word_had_mistake: bool = false
 var combo: int = 0
 var max_combo: int = 0
 var current_word: String = ""
@@ -76,6 +89,9 @@ var category: int = C.Category.KARISIK
 # Oyun içi sayaçlar
 var words_completed_in_run: int = 0
 var no_death_streak: int = 0
+# Koşu boyunca yenen yıldız sayısı (her STARS_PER_TAIL_DROP'da 1 kuyruk düşer).
+# Bölüm geçişinde SIFIRLANMAZ, yeni oyunda sıfırlanır.
+var stars_eaten: int = 0
 
 # Aktif skin
 var current_skin: Dictionary = {}
@@ -114,20 +130,20 @@ const TR_EN_DICT: Dictionary = {
 
 # Achievement tanımları
 const ACHIEVEMENT_DEFS: Array = [
-                {"id": "first_word", "title": "İlk Kelime", "description": "İlk kelimeni tamamla", "icon": "🎯"},
-                {"id": "combo_5", "title": "Combo Ustası", "description": "5x combo yap", "icon": "🔥"},
-                {"id": "combo_10", "title": "Combo Efsanesi", "description": "10x combo yap", "icon": "⚡"},
-                {"id": "score_100", "title": "Yüzü Geç", "description": "100 puana ulaş", "icon": "💯"},
-                {"id": "score_500", "title": "Beş Yüz Kulübü", "description": "500 puana ulaş", "icon": "🏆"},
-                {"id": "score_1000", "title": "Bin Puan", "description": "1000 puana ulaş", "icon": "👑"},
-                {"id": "level_5", "title": "Acemi", "description": "5. bölüme ulaş", "icon": "🌱"},
-                {"id": "level_10", "title": "Çırak", "description": "10. bölüme ulaş", "icon": "⭐"},
-                {"id": "level_25", "title": "Usta", "description": "25. bölüme ulaş", "icon": "🎖️"},
-                {"id": "words_10", "title": "Kelime Avcısı", "description": "10 kelime tamamla", "icon": "📚"},
-                {"id": "words_50", "title": "Kelime Hazinesi", "description": "50 kelime tamamla", "icon": "📖"},
-                {"id": "daily_done", "title": "Günlük Görev", "description": "Günlük kelimeyi tamamla", "icon": "📅"},
-                {"id": "booster_collect", "title": "Hız Toplayıcı", "description": "İlk hız boostunu topla", "icon": "🚀"},
-                {"id": "no_death_run", "title": "Kusursuz Bölüm", "description": "Hatayla 5 kelime üst üste tamamla", "icon": "✨"},
+                {"id": "first_word", "title": "İlk Kelime", "description": "İlk kelimeni tamamla", "icon": "»"},
+                {"id": "combo_5", "title": "Combo Ustası", "description": "5x combo yap", "icon": "†"},
+                {"id": "combo_10", "title": "Combo Efsanesi", "description": "10x combo yap", "icon": "*"},
+                {"id": "score_100", "title": "Yüzü Geç", "description": "100 puana ulaş", "icon": "%"},
+                {"id": "score_500", "title": "Beş Yüz Kulübü", "description": "500 puana ulaş", "icon": "★"},
+                {"id": "score_1000", "title": "Bin Puan", "description": "1000 puana ulaş", "icon": "♦"},
+                {"id": "level_5", "title": "Acemi", "description": "5. bölüme ulaş", "icon": "+"},
+                {"id": "level_10", "title": "Çırak", "description": "10. bölüme ulaş", "icon": "☆"},
+                {"id": "level_25", "title": "Usta", "description": "25. bölüme ulaş", "icon": "¤"},
+                {"id": "words_10", "title": "Kelime Avcısı", "description": "10 kelime tamamla", "icon": "¶"},
+                {"id": "words_50", "title": "Kelime Hazinesi", "description": "50 kelime tamamla", "icon": "§"},
+                {"id": "daily_done", "title": "Günlük Görev", "description": "Günlük kelimeyi tamamla", "icon": "#"},
+                {"id": "booster_collect", "title": "Hız Toplayıcı", "description": "İlk hız boostunu topla", "icon": "^"},
+                {"id": "no_death_run", "title": "Kusursuz Bölüm", "description": "Hatasız üst üste 5 kelime tamamla", "icon": "×"},
 ]
 
 # --------------------------------------------------------------------------
@@ -143,6 +159,7 @@ var _loaded_word: String = "ADAM"
 var _loaded_tricky: bool = false
 var _loaded_obstacles: int = 0
 var _loaded_timed: bool = false
+var _loaded_hide_word: bool = false
 var _loaded_time_limit_ms: int = 0
 
 # Zamanlayıcı
@@ -160,10 +177,26 @@ var achievements: Array = []
 var category_progress: Dictionary = {}
 var weekly_stats: Array = []  # 7 Dictionary: {date, gamesPlayed, score}
 
-# Ses (basit — gerçek ses dosyası yok, sadece state)
+# Ses ayarları (SoundManager autoload bu değerlerle senkronize edilir)
 var sound_enabled: bool = true
 var sound_volume: float = 0.35
 var tts_volume: float = 0.9
+
+
+## Ses efektlerini aç/kapat ve kalıcı hale getir.
+func set_sound_enabled(value: bool) -> void:
+                sound_enabled = value
+                stats["soundEnabled"] = value
+                SoundManager.set_enabled(value)
+                _save_stats()
+
+
+## Ses efekti seviyesi (0.0 - 1.0) ve kalıcı hale getir.
+func set_sound_volume(value: float) -> void:
+                sound_volume = clampf(value, 0.0, 1.0)
+                stats["soundVolume"] = sound_volume
+                SoundManager.set_volume(sound_volume)
+                _save_stats()
 
 
 # ==========================================================================
@@ -202,8 +235,52 @@ func _process(_delta: float) -> void:
 # ==========================================================================
 # Bölüm yükleme
 # ==========================================================================
+## Bölümün başlangıç yılan uzunluğu (zorluk göstergesi).
+## Saf fonksiyon: yan etkisi yok, bu yüzden testte doğrudan çağrılabilir.
+func snake_length_for_level(lvl: int) -> int:
+                return clampi(C.SNAKE_START_LENGTH + (lvl - 1) * C.SNAKE_LENGTH_PER_LEVEL,
+                                C.SNAKE_START_LENGTH, C.SNAKE_LENGTH_CAP)
+
+
+## Bölüm içinde ulaşılabilecek en fazla uzunluk (taban + geçici büyüme).
+func max_snake_length() -> int:
+                return snake_length + C.SNAKE_IN_LEVEL_GROWTH_MAX
+
+
+## Bu harf yılanı büyütmeli mi?
+## Büyüme her harfte değil, kelime uzunluğuna göre seyrekleşir:
+##   3-4 harf -> her harf, 5 harf -> 2'de bir, 6+ harf -> 3'te bir.
+## Saf fonksiyon (test edilebilir).
+func should_grow_on_letter(word_len: int, letters_eaten: int) -> bool:
+                var every: int = C.grow_every_for_len(word_len)
+                if every <= 0 or letters_eaten <= 0:
+                                return false
+                return letters_eaten % every == 0
+
+
+## Bölüm içi büyüme kredisi ver (tavanı aşmaz).
+func _grant_growth(amount: int = 1) -> void:
+                var room: int = C.SNAKE_IN_LEVEL_GROWTH_MAX - _in_level_growth
+                if room <= 0:
+                                return
+                var give: int = mini(amount, room)
+                _in_level_growth += give
+                snake_grow_requested.emit(give)
+
+
+## Yeni kelimeye/bölüme geçerken kelime içi sayaçları sıfırla.
+func _reset_word_counters() -> void:
+                _word_growth_letters = 0
+                _word_had_mistake = false
+
+
 func load_level(p_level: int) -> void:
                 level = p_level
+                # Yılan uzunluğu bölümle kalıcı olarak artar (zorluk göstergesi)
+                snake_length = snake_length_for_level(level)
+                # Bölüm içi geçici büyüme sıfırlanır (taban uzunluğa dönülür)
+                _in_level_growth = 0
+                _reset_word_counters()
                 var diff: Dictionary = difficulty_manager.get_difficulty_for_level(level, easy_mode)
                 tier_name = diff["tier"]["name"]
                 step_sec = diff["step_sec"]
@@ -211,6 +288,7 @@ func load_level(p_level: int) -> void:
                 _loaded_obstacles = diff["obstacle_count"]
                 _loaded_timed = diff["timed"]
                 _loaded_time_limit_ms = diff["time_limit_ms"]
+                _loaded_hide_word = bool(diff.get("hide_word", false))
 
                 var pick: Dictionary
                 if daily_challenge:
@@ -220,6 +298,7 @@ func load_level(p_level: int) -> void:
                                 _loaded_obstacles = 0
                                 _loaded_timed = false
                                 _loaded_time_limit_ms = 0
+                                _loaded_hide_word = false
                 else:
                                 pick = difficulty_manager.pick_word_for_level(level, _recent_words, word_manager, category)
                                 current_word = pick["word"]
@@ -251,6 +330,7 @@ func retry_level() -> void:
                 current_word = _loaded_word
                 current_letter_index = 0
                 combo = 0
+                _reset_word_counters()
                 time_limit_ms = _loaded_time_limit_ms
                 time_remaining_ms = time_limit_ms
                 status = "playing"
@@ -268,7 +348,10 @@ func start_game() -> void:
                 max_combo = 0
                 words_completed_in_run = 0
                 no_death_streak = 0
+                stars_eaten = 0
                 level = 1
+                _in_level_growth = 0
+                _reset_word_counters()
                 _recent_words.clear()
                 load_level(1)
 
@@ -279,6 +362,9 @@ func reset_to_menu() -> void:
                 combo = 0
                 max_combo = 0
                 level = 1
+                stars_eaten = 0
+                _in_level_growth = 0
+                _reset_word_counters()
                 status = "menu"
                 _step_timer.stop()
                 _transition_timer.stop()
@@ -288,10 +374,29 @@ func reset_to_menu() -> void:
 # ==========================================================================
 # Yılan-harf çarpışma kontrolü (Snake.gd'den gelen sinyaller)
 # ==========================================================================
+## Sıradaki hedef harf (BÜYÜK). Kelime yoksa/bittiyse "" döner.
+func current_target_char() -> String:
+                if current_word.is_empty() or current_letter_index >= current_word.length():
+                                return ""
+                return current_word[current_letter_index]
+
+
+## Yenen harf sıradaki HEDEF harf mi?
+## ÖNEMLİ: `order_index` ile karşılaştırma YAPILMAZ. Mükerrer harfli kelimelerde
+## (ANA, ARABA, KAKA...) aynı harften birden fazla taş bulunur ve oyuncu
+## hangisinin kaçıncı sıraya ait olduğunu ayırt edemez; eskiden "ikinci A"yı
+## yiyince haksız yere can gidiyordu. Karşılaştırma harf üzerinden yapılır.
+func is_expected_letter(letter: Dictionary) -> bool:
+                var want: String = current_target_char()
+                if want != "":
+                                return str(letter["char"]) == want
+                return int(letter["order_index"]) == current_letter_index
+
+
 func on_letter_reached(letter: Dictionary) -> void:
                 if status != "playing":
                                 return
-                if int(letter["order_index"]) == current_letter_index:
+                if is_expected_letter(letter):
                                 # DOĞRU harf
                                 current_letter_index += 1
                                 combo += 1
@@ -302,6 +407,10 @@ func on_letter_reached(letter: Dictionary) -> void:
                                 combo_changed.emit(combo)
                                 score_changed.emit(score)
                                 word_changed.emit(current_word, current_letter_index)
+                                # BÜYÜME: her harfte değil, kelime uzunluğuna göre seyrekleşir
+                                _word_growth_letters += 1
+                                if should_grow_on_letter(current_word.length(), _word_growth_letters):
+                                                _grant_growth(1)
                                 _check_achievements_realtime(combo)
                                 # Kelime tamamlandı mı?
                                 if current_letter_index >= current_word.length():
@@ -309,9 +418,13 @@ func on_letter_reached(letter: Dictionary) -> void:
                                                 if time_limit_ms > 0 and float(time_remaining_ms) / float(time_limit_ms) > C.TIME_BONUS_THRESHOLD:
                                                                 time_bonus = C.TIME_BONUS_POINTS
                                                                 score += time_bonus
-                                                score += C.SCORE_WORD_BONUS
+                                                # Kelime bitirme bonusu: kademeye göre (20/35/50/75)
+                                                var word_bonus: int = C.tier_word_bonus(level)
+                                                # Hatasız bitirme bonusu (kelime boyunca hiç yanlış yoksa)
+                                                if not _word_had_mistake:
+                                                                word_bonus += C.SCORE_FLAWLESS_BONUS
+                                                score += word_bonus
                                                 words_completed_in_run += 1
-                                                no_death_streak += 1
                                                 # İstatistik güncelle
                                                 stats["totalWordsCompleted"] = int(stats.get("totalWordsCompleted", 0)) + 1
                                                 if score > int(stats.get("bestScore", 0)):
@@ -333,11 +446,13 @@ func on_letter_reached(letter: Dictionary) -> void:
                                                 # Achievement kontrol
                                                 _check_achievements()
                                                 # Boost kalan süre
+                                                # Kelime tamamlanınca ekstra büyüme (görünür ödül)
+                                                _grant_growth(C.SNAKE_WORD_COMPLETE_GROWTH)
                                                 boost_remaining_ms = 0
                                                 score_changed.emit(score)
                                                 status = "level_complete"
                                                 status_changed.emit(status)
-                                                word_complete.emit(current_word, C.SCORE_WORD_BONUS + time_bonus, translation)
+                                                word_complete.emit(current_word, word_bonus + time_bonus, translation)
                                                 if not translation.is_empty():
                                                                 translation_shown.emit(current_word, translation)
                                                 level_complete.emit()
@@ -347,6 +462,7 @@ func on_letter_reached(letter: Dictionary) -> void:
                                 # YANLIŞ harf
                                 combo = 0
                                 no_death_streak = 0
+                                _word_had_mistake = true
                                 lives -= 1
                                 var expected: String = current_word[current_letter_index] if current_letter_index < current_word.length() else "?"
                                 letter_wrong.emit(letter["char"], expected)
@@ -378,8 +494,23 @@ func on_ate_bonus(char: String, gained: int) -> void:
                 if status != "playing":
                                 return
                 score += gained
+                stars_eaten += 1
+                # YILDIZ ÖDÜLÜ — seriyi besler:
+                #  1) +puan (gained = BONUS_LETTER_VALUE)
+                #  2) combo +1  -> bir sonraki harfler daha değerli (puan = 10 + 5×(combo-1))
+                #  3) her STARS_PER_TAIL_DROP yıldızda kuyruktan 1 segment düşer
+                # Yıldız UZATMAZ (uzunluk bu oyunda ceza: kendine çarpma ölümcül).
+                # Yıldız hatayı AFFETMEZ: yanlış harfte seri yine sıfırlanır.
+                combo += 1
+                max_combo = max(max_combo, combo)
                 ate_bonus.emit(char, gained)
+                stars_changed.emit(stars_eaten, C.STARS_PER_TAIL_DROP)
+                combo_changed.emit(combo)
                 score_changed.emit(score)
+                # HER STARS_PER_TAIL_DROP (15) YILDIZDA 1 KUYRUK DÜŞER.
+                # Ödül koşu boyunca biriktiği için ilk 15 yıldıza ~8 bölümde ulaşılır.
+                if C.STARS_PER_TAIL_DROP > 0 and stars_eaten % C.STARS_PER_TAIL_DROP == 0:
+                                snake_shrink_requested.emit(1)
 
 
 func on_boost_collected(gained: int) -> void:
@@ -449,8 +580,9 @@ func step_snake(snake: Node) -> void:
                 var mult: float = snake.get_active_speed_multiplier()
                 var effective_step: float = step_sec / mult if mult > 0 else step_sec
                 _step_timer.wait_time = clampf(effective_step, C.SPEED_MIN_SEC * 0.5, C.SPEED_MAX_SEC * 2.0)
-                # Snake içinde current_target_index set et
+                # Snake içinde hedef harf/sıra senkronu (mükerrer harf için HARF şart)
                 snake.current_target_index = current_letter_index
+                snake.current_target_char = current_target_char()
                 snake.step()
                 # Boost kalan süre aynala
                 boost_remaining_ms = snake.boost_remaining_ms()
@@ -574,22 +706,12 @@ func get_skin() -> Dictionary:
 
 
 # ==========================================================================
-# Ses ayarları
+# Ses ayarları — TTS seviyesi
+# --------------------------------------------------------------------------
+# NOT: set_sound_enabled / set_sound_volume yukarıda "Stats" bölümünde
+# tanımlıdır. Burada tekrar tanımlanırsa GDScript
+# "Function has the same name as a previously declared function" hatası verir.
 # ==========================================================================
-func set_sound_enabled(enabled: bool) -> void:
-                sound_enabled = enabled
-                stats["soundEnabled"] = enabled
-                _save_stats()
-                stats_changed.emit(stats)
-
-
-func set_sound_volume(v: float) -> void:
-                sound_volume = clamp(v, 0.0, 1.0)
-                stats["soundVolume"] = sound_volume
-                _save_stats()
-                stats_changed.emit(stats)
-
-
 func set_tts_volume(v: float) -> void:
                 tts_volume = clamp(v, 0.0, 1.0)
                 stats["ttsVolume"] = tts_volume
@@ -846,8 +968,14 @@ func _emit_all() -> void:
                 word_changed.emit(current_word, current_letter_index)
                 status_changed.emit(status)
                 combo_changed.emit(combo)
+                stars_changed.emit(stars_eaten, C.STARS_PER_TAIL_DROP)
                 if time_limit_ms > 0:
                                 time_changed.emit(time_remaining_ms, time_limit_ms)
+
+
+## Hedef sözcük üst çubukta gizli mi? (zorluk kademesine göre)
+func is_word_hidden() -> bool:
+                return _loaded_hide_word
 
 
 ## Bir sonraki hedef harf (UI vurgusu için)
