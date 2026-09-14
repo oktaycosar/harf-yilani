@@ -9,6 +9,24 @@ bonus harfler, buz alanları, hız artırıcılar, süreli mod, kolay mod, günl
 TR→EN çeviri, kategori seçimi, yılan skin sistemi, achievement'lar, liderlik tablosu,
 kategori ilerleme takibi ve haftalık istatistikler.
 
+> Web sürümü ve lisans bilgisi için depo kökündeki [README](../README.md).
+
+## ⌨️ Kontroller
+
+| Tuş | İşlev |
+|---|---|
+| ← ↑ → ↓ / WASD | Yön |
+| P veya Esc | Duraklat / devam et |
+| Enter veya Space | Menüyü başlat |
+| Esc (menüde) veya ÇIKIŞ butonu | Oyundan çık |
+
+## ⭐ Bonus (yıldız) kuralı
+
+Yıldız **ödüldür**: +25 puan ve combo +1 verir, yılanı **büyütmez**.
+Her **15 yıldızda** yılanın 1 kuyruğu düşer (taban uzunluğun altına inmez).
+Böylece uzun vadede yılan uzamaz — bu oyunda uzunluk puan değil,
+kendine çarpıp ölme riskidir. Yılanı **sadece doğru harfler** büyütür.
+
 ## 📁 Klasör Yapısı
 
 ```
@@ -18,20 +36,33 @@ godot-project/
 ├── scenes/
 │   ├── Main.tscn             # Ana sahne (UI + GameArea + Snake + entities)
 │   └── Letter.tscn           # Tek harf objesi sahnesi
-└── scripts/
-    ├── constants.gd          # Sabitler + kategoriler + 5 yılan skin + new game constants
-    ├── word_manager.gd       # Türkçe kelime veritabanı (5 kategori × 4 uzunluk)
-    ├── difficulty_manager.gd # Zorluk yöneticisi (engel/süreli mod + günlük challenge)
-    ├── snake.gd              # Yılan motoru (engel/bonus/ice/booster + boost/ice state)
-    ├── letter.gd             # Harf objesi (order_index ile)
-    ├── game_manager.gd       # Oyun durumu + kalıcılık (ConfigFile) + achievements
-    ├── ui_manager.gd          # HUD + paneller + achievement notif + combo flash
-    └── main.gd               # Ana sahne (girdi + entity yerleştirme)
+├── assets/
+│   ├── snake/
+│   │   ├── snake.png         # 4x4 atlas (hücre 144px): kafa/kuyruk/gövde/köşe
+│   │   ├── snake_faces.png   # HUD portresi (3 ifade)
+│   │   └── snake_hue.gdshader # Skin sistemi (hue-shift)
+│   └── ui/                   # Çerçeve, paneller, döşemeler, ikonlar, dekor, arka plan
+├── scripts/
+│   ├── constants.gd          # Sabitler + kategoriler + yılan skinleri
+│   ├── word_manager.gd       # Türkçe kelime veritabanı (5 kategori × 4 uzunluk)
+│   ├── difficulty_manager.gd # Zorluk yöneticisi (engel/süreli mod + günlük challenge)
+│   ├── snake.gd              # Yılan motoru (atlas çizimi + boost/ice state)
+│   ├── letter.gd             # Harf objesi (order_index ile)
+│   ├── board_background.gd   # Tahta ızgarası + kesişim noktaları
+│   ├── game_manager.gd       # Oyun durumu + kalıcılık (ConfigFile) + başarımlar
+│   ├── ui_manager.gd         # HUD + paneller + achievement notif + combo flash
+│   └── main.gd               # Ana sahne (girdi + entity yerleştirme)
+├── tests/
+│   └── test_game.gd          # Headless test paketi (368 kontrol)
+├── tools/                    # Piksel varlık üreticileri (Python + Pillow)
+│   ├── README.md             # Üretim zinciri + ölçülen sözleşmeler
+│   └── source/               # Kaynak kit sayfaları (varlıklar sıfırdan üretilebilir)
+└── docs/                     # Ekran görüntüleri + tasarım notları
 ```
 
 ## 🚀 Çalıştırma
 
-1. **Godot 4.3+** indirin: <https://godotengine.org/download>
+1. **Godot 4.7+** indirin: <https://godotengine.org/download>
 2. Godot'u açın → **Import** → bu `godot-project/` klasörünü seçin.
 3. `scenes/Main.tscn` ana sahne olarak otomatik ayarlanmıştır (project.godot).
 4. **F5** ile çalıştırın.
@@ -43,7 +74,7 @@ godot-project/
 ## ✅ Doğrulama (headless test)
 
 Proje, oyun kurallarını gerçekten çalıştıran bir headless test içerir
-(`tests/test_game.gd` → 148 kontrol). Kod değiştirdikten sonra çalıştırın:
+(`tests/test_game.gd` → 368 kontrol). Kod değiştirdikten sonra çalıştırın:
 
 ```bash
 godot --headless --path godot-project res://tests/test_game.tscn
@@ -61,6 +92,11 @@ godot --headless --path godot-project res://tests/test_game.tscn
 - Hareket, ters yön engeli, doğru/yanlış harf, duvar ve engel çarpışması sinyalleri
 - Prosedürel ses: 11 efektin PCM sentezi, ses havuzu, sessiz mod
 - GameManager: autoload, stats anahtarları, 14 başarım, TR→EN sözlüğü, skin kalıcılığı
+- **Yılan atlası geometrisi**: 12 açık kenarda boru kalınlığı tam 30 px, 4 yönün
+  kafa kalınlığı eşit, yarı saydam piksel yok (`_test_atlas_geometry`)
+- **Yıldız ödülü**: 14 yıldızda kuyruk düşmez, 15'te düşer, 30'da tekrar düşer
+- **HUD**: kalp sprite'ları, panel dokuları, kafa portresi ifadeleri, gece varlıkları
+- **Çıkış**: menüde ÇIKIŞ butonu var, `%QuitButton` bağlı, Esc de çıkış yapıyor
 
 Ayrıca oyunun kendisini de hatasız başlattığını doğrulayabilirsiniz:
 
