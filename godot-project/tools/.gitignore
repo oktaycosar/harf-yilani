@@ -5,3 +5,7 @@ _*.png
 _*.json
 __pycache__/
 *.pyc
+
+# Godot projedeki HER png icin .import yan dosyasi uretir. tools/ ve source/
+altindakiler OYUN VARLIGI DEGIL (uretici ciktisi / kaynak sanat) -> gereksiz.
+*.import
